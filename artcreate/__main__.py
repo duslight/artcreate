@@ -26,18 +26,26 @@ if __package__ in (None, ""):
     from artcreate.tools.compiler import compile_prompt
     from artcreate.tools.provider import generate
     from artcreate.tools.postprocess import process_run
+    from artcreate.tools.spec_validate import validate_spec, format_issues
     from artcreate.gates.lint import lint_spec, format_warnings
 else:
     from .tools.config import get_config
     from .tools.compiler import compile_prompt
     from .tools.provider import generate
     from .tools.postprocess import process_run
+    from .tools.spec_validate import validate_spec, format_issues
     from .gates.lint import lint_spec, format_warnings
 
 
 def load_spec(path: str) -> dict:
     with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        spec = yaml.safe_load(f)
+    issues = validate_spec(spec)
+    if issues:
+        print(format_issues(issues))
+        if any(i["level"] == "error" for i in issues):
+            raise SystemExit(f"spec 校验失败：{path}")
+    return spec
 
 
 def resolve_refs(spec: dict, spec_dir: Path):
@@ -171,18 +179,6 @@ def cmd_regenerate(subject: str, run_id: str = None):
     return _execute_run(spec, refs)
 
 
-def cmd_run(spec_path: str):
-    cfg = get_config()
-    spec_path = Path(spec_path)
-    spec = load_spec(str(spec_path))
-    d = cfg.defaults
-    size = spec.get("size", d["size"])
-    count = spec.get("count", d["count"])
-    refs = resolve_refs(spec, spec_path.parent)
-    cfg.validate_size(size, with_ref=bool(refs))
-
-    # 1. 编译
-    result = compile_prompt(spec)
 def cmd_list(subject=None, status=None):
     import artcreate.store as store
     rows = store.list_candidates(subject=subject, status=status)
