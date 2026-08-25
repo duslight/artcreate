@@ -29,3 +29,6 @@ exports/
 Thumbs.db
 .idea/
 .vscode/
+
+# 本地数据库
+*.db
