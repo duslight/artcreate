@@ -69,11 +69,10 @@ llm:
 gates:
   mechanical:
     palette:
-      max_colors: 64            # 主色数 N
-      coverage_ratio: 0.50      # top-64 色覆盖像素比例下限
-      # 校准记录：真实像素画理想 ≥90%；当前出图实测 54-70%（后处理未做调色板量化，
-      # 渐变噪声色多）。阈值先定 50% 保证流水（拦极端跑偏），待 postprocess 增加
-      # palette quantize 步骤后收紧到 90。
+      max_colors: 64            # 主色数 N（后处理 kmeans 量化同源取值）
+      coverage_ratio: 0.90      # top-64 色覆盖像素比例下限
+      # 2026-08-25 收紧：后处理已加调色板量化（网格小图 kmeans→64 色回贴），
+      # 12 张历史 raw 实测唯一色=64、覆盖率 100%（量化前 36-70%）。
       quantize_level: 6         # 颜色量化位深（每通道 2^n）
     grid:
       max_deviation: 0.30       # 规则度 ≥0.70（实测 0.75-0.94；理想 0.02 偏差）

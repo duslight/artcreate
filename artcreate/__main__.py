@@ -320,6 +320,17 @@ def main():
     p = sub.add_parser("demote")
     p.add_argument("pid", type=int)
 
+    p = sub.add_parser("anchor")
+    p.add_argument("character")
+    p.add_argument("image", help="锚点图路径（相对仓库根）")
+    p.add_argument("--note", default="")
+    p.add_argument("--from-candidate", default=None,
+                   help="run_id#idx（从拍板候选晋升锚点，记演进链）")
+
+    p = sub.add_parser("consistency")
+    p.add_argument("subject")
+    p.add_argument("run_id", nargs="?", default=None)
+
     args = ap.parse_args()
     if args.cmd == "run":
         cmd_run(args.spec)
@@ -371,6 +382,28 @@ def main():
         from artcreate.distill import undo
         r = undo(args.pid)
         print(f"已撤销晋升" + (f"（git {r['git_commit']}）" if r.get("git_commit") else ""))
+    elif args.cmd == "anchor":
+        from artcreate.character import set_anchor
+        aid = set_anchor(args.character, args.image, args.note,
+                         from_candidate=args.from_candidate)
+        print(f"锚点 #{aid} 已设定：{args.character} ← {args.image}")
+    elif args.cmd == "consistency":
+        from artcreate.character import check_run_consistency
+        import artcreate.store as store
+        run_id = args.run_id or (store.latest_run(args.subject) or {}).get("run_id")
+        if not run_id:
+            row = store.latest_run(args.subject)
+            run_id = row["run_id"] if row else None
+        if not run_id:
+            print(f"subject {args.subject} 无任何 run")
+            return
+        reps = check_run_consistency(args.subject, run_id)
+        if not reps:
+            print(f"（{args.subject} 无锚点或无候选——先 anchor 设锚点）")
+            return
+        print(f"=== 锚点一致性 run={run_id} ===")
+        for r in reps:
+            print(f"  #{r['idx']}: 距离 {r['distance']} → {r['verdict']}（{r['hint']}）")
 
 
 if __name__ == "__main__":

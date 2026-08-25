@@ -1,7 +1,9 @@
-"""artcreate · 后处理：下载 RAW → 像素网格化 → 落盘 exports 目录结构
+"""artcreate · 后处理：下载 RAW → 像素网格化 → 调色板量化 → 落盘 exports 目录结构
 
-相对 art_pipeline 版本：目录结构改为资产契约（D-工厂三件套）：
-  exports/{subject}/{run_id}/raw.png  raw_N.png / out_N.png
+目录结构（资产契约 D-工厂三件套）：
+  exports/{subject}/{run_id}/raw_N.png / out_N.png / thumb_N.jpg
+量化（palette quantize）：网格小图上 kmeans 聚到 max_colors 主色，
+NEAREST 放大不引入新色——真实像素画的调色板特征（门禁收紧的前置）。
 """
 import urllib.request
 from pathlib import Path
@@ -19,9 +21,31 @@ def download(url: str, dest: Path):
         f.write(r.read())
 
 
+def quantize_palette(small_bgra: np.ndarray, max_colors: int) -> np.ndarray:
+    """网格小图调色板量化：kmeans 聚到 ≤max_colors 主色后逐像素回贴。
+    在小图（网格分辨率）上做——像素数少、色簇即最终可见色。"""
+    h, w = small_bgra.shape[:2]
+    px = small_bgra[:, :, :3].reshape(-1, 3).astype(np.float32)
+    k = min(max_colors, len(np.unique(px, axis=0)))
+    if k < 2:
+        return small_bgra
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 12, 0.5)
+    _, labels, centers = cv2.kmeans(px, k, None, criteria, 3,
+                                     cv2.KMEANS_PP_CENTERS)
+    q = centers[labels.flatten()].reshape(h, w, 3).astype(np.uint8)
+    out = small_bgra.copy()
+    out[:, :, :3] = q
+    return out
+
+
 def pixelate(src_path: Path, dst_path: Path, thumb_size: int = 512):
-    """网格检测 → INTER_AREA 缩到网格 → NEAREST 放大回原尺寸（VibeGame pixel_clean 复刻）
-    同时产出 thumb_N.jpg 缩略图（定稿全保+候选缩略的存储策略：日志/时间线只吃缩略图）"""
+    """网格检测 → INTER_AREA 缩到网格 → 调色板量化 → NEAREST 放大回原尺寸
+    同时产出 thumb_N.jpg 缩略图（定稿全保+候选缩略）。
+    max_colors 从 gates.mechanical.palette 读（与门禁同源：量化=64 则覆盖率必达标）。"""
+    cfg = get_config()
+    pal = (cfg.gates.get("mechanical") or {}).get("palette") or {}
+    max_colors = int(pal.get("max_colors", 64))
+
     img = cv2.imread(str(src_path), cv2.IMREAD_UNCHANGED)
     if img is None:
         raise ValueError(f"无法读取图像: {src_path}")
@@ -31,6 +55,7 @@ def pixelate(src_path: Path, dst_path: Path, thumb_size: int = 512):
     result = get_perfect_pixel(img[:, :, :3])
     gw, gh = max(1, int(result[0])), max(1, int(result[1]))
     small = cv2.resize(img, (gw, gh), interpolation=cv2.INTER_AREA)
+    small = quantize_palette(small, max_colors)
     out = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
     cv2.imwrite(str(dst_path), out)
 
@@ -44,7 +69,8 @@ def pixelate(src_path: Path, dst_path: Path, thumb_size: int = 512):
     thumb_path = dst_path.parent / dst_path.name.replace(".png", ".jpg")
     cv2.imwrite(str(thumb_path), thumb[:, :, :3],
                 [cv2.IMWRITE_JPEG_QUALITY, 82])
-    return {"w": w, "h": h, "grid_w": gw, "grid_h": gh}
+    return {"w": w, "h": h, "grid_w": gw, "grid_h": gh,
+            "palette_colors": max_colors}
 
 
 def process_run(raw_urls, out_dir: Path):

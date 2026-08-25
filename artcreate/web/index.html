@@ -74,6 +74,28 @@ async function sel(runId) {
   const d = await (await fetch(`/api/runs/${runId}/candidates`)).json();
   curData = d;
   render(d);
+  loadConsistency(runId);
+}
+
+let consMap = {};
+async function loadConsistency(runId) {
+  consMap = {};
+  try {
+    const r = await fetch(`/api/runs/${runId}/consistency`, {headers:H()});
+    if (!r.ok) return;
+    const d = await r.json();
+    d.reports.forEach(x => consMap[x.idx] = x);
+    document.querySelectorAll('.card').forEach(card => {
+      const idx = parseInt(card.dataset.idx);
+      const c = consMap[idx];
+      if (!c) return;
+      const color = c.verdict === 'consistent' ? 'var(--ok)' :
+                    c.verdict === 'too_similar' ? 'var(--warn)' :
+                    c.verdict === 'drift_risk' ? 'var(--bad)' : 'var(--dim)';
+      card.querySelector('.bar').insertAdjacentHTML('afterbegin',
+        `<span class="badge" style="background:#26292d;color:${color}" title="${c.hint}">Δ${c.distance}</span>`);
+    });
+  } catch (e) { /* 无锚点静默 */ }
 }
 
 function badge(s) {
@@ -89,7 +111,7 @@ function render(d) {
     const l3 = rep.l3 ? (rep.l3.results||[]).map(x =>
       `<div class="${x.ok?'p':'f'}">${x.ok?'✓':'✗'} ${x.source}${x.ok?'':' — '+x.answer}</div>`).join('') : '';
     return `
-    <div class="card">
+    <div class="card" data-idx="${c.idx}">
       <img src="/api/images/${d.run.subject}/${d.run.run_id}/${c.file}"
            onclick="zoom(this.src)" loading="lazy">
       <div class="bar">

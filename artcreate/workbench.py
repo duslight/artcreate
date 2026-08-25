@@ -179,3 +179,43 @@ def api_undo_reject(pid: int, request: Request, x_token: str = Header(None),
         return distill.undo_reject(pid, actor=_actor(x_actor_id, x_actor_name))
     except ValueError as e:
         raise HTTPException(422, str(e))
+
+
+# ---------- 角色线（阶段7） ----------
+@router.get("/api/characters/{name}/anchor")
+def api_get_anchor(name: str, request: Request, x_token: str = Header(None)):
+    _check_token(request, x_token)
+    from . import character
+    a = character.get_anchor(name)
+    if not a:
+        raise HTTPException(404, "该角色尚无锚点")
+    return {"anchor": a, "lineage": character.anchor_lineage(name)}
+
+
+@router.post("/api/characters/{name}/anchor")
+def api_set_anchor(name: str, request: Request, body: dict,
+                   x_token: str = Header(None),
+                   x_actor_id: str = Header(None), x_actor_name: str = Header(None)):
+    """body: {image_path, note?, from_candidate?}（image_path 相对仓库根）。"""
+    _check_token(request, x_token)
+    from . import character
+    if not body.get("image_path"):
+        raise HTTPException(422, "image_path 必填")
+    aid = character.set_anchor(name, body["image_path"],
+                               body.get("note", ""),
+                               actor=_actor(x_actor_id, x_actor_name),
+                               from_candidate=body.get("from_candidate"))
+    return {"anchor_id": aid}
+
+
+@router.get("/api/runs/{run_id}/consistency")
+def api_consistency(run_id: str, request: Request, x_token: str = Header(None)):
+    """run 候选 vs 角色锚点一致性报告（评审参考，非门禁）。"""
+    _check_token(request, x_token)
+    from . import character
+    row = store.db().execute("SELECT subject FROM runs WHERE run_id=?",
+                             (run_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "run 不存在")
+    return {"subject": row["subject"],
+            "reports": character.check_run_consistency(row["subject"], run_id)}
