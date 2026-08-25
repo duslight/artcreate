@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>artcreate · 资产评审</title>
+<style>
+  :root { --bg:#141517; --panel:#1e2023; --line:#2c2f33; --txt:#d8dad9;
+          --dim:#8a8f94; --acc:#4f9cf9; --ok:#3fb96f; --bad:#e05555; --warn:#e0a34f; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--txt);
+         font:14px/1.6 "Segoe UI",system-ui,sans-serif; padding:20px; }
+  h1 { font-size:18px; margin-bottom:4px; }
+  .sub { color:var(--dim); font-size:12px; margin-bottom:16px; }
+  .layout { display:grid; grid-template-columns:260px 1fr; gap:16px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+  .runs { padding:8px; max-height:82vh; overflow:auto; }
+  .run-item { padding:8px 10px; border-radius:6px; cursor:pointer; margin-bottom:4px; }
+  .run-item:hover { background:#26292d; }
+  .run-item.active { background:#2b3138; outline:1px solid var(--acc); }
+  .run-item .rid { font-size:12px; word-break:break-all; }
+  .run-item .rmeta { color:var(--dim); font-size:11px; }
+  .main { padding:16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; margin-top:12px; }
+  .card { background:#22252a; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .card img { width:100%; display:block; cursor:zoom-in; }
+  .card .bar { display:flex; align-items:center; gap:8px; padding:8px 10px; }
+  .badge { font-size:11px; padding:2px 8px; border-radius:10px; }
+  .b-generated { background:#3a3f45; color:#cfd3d6; }
+  .b-gated { background:#1f4a30; color:var(--ok); }
+  .b-accepted { background:#173f2a; color:#5fd58f; outline:1px solid var(--ok); }
+  .b-rejected { background:#4a2323; color:#ff8d8d; }
+  .spacer { flex:1; }
+  button { background:#2b3138; color:var(--txt); border:1px solid var(--line);
+           border-radius:6px; padding:5px 12px; cursor:pointer; font-size:12px; }
+  button:hover { border-color:var(--acc); }
+  button.ok { color:var(--ok); }
+  button.no { color:var(--bad); }
+  .checks { padding:4px 10px 8px; color:var(--dim); font-size:11px; }
+  .checks .f { color:var(--bad); }
+  .checks .p { color:var(--ok); }
+  .prompt { background:#191b1e; border:1px solid var(--line); border-radius:6px;
+            padding:10px; font-size:11px; color:var(--dim); margin-top:10px;
+            max-height:110px; overflow:auto; word-break:break-all; }
+  .empty { color:var(--dim); padding:60px; text-align:center; }
+  dialog { background:var(--panel); color:var(--txt); border:1px solid var(--line);
+           border-radius:10px; max-width:92vw; max-height:92vh; }
+  dialog img { max-width:88vw; max-height:84vh; display:block; }
+</style>
+</head>
+<body>
+<h1>artcreate · 资产评审</h1>
+<div class="sub">候选网格 → 接受 / 拒绝（带码）→ 门禁与回查报告就地查看</div>
+<div class="layout">
+  <div class="panel runs" id="runs">加载中…</div>
+  <div class="panel main" id="main"><div class="empty">左侧选择一次 run</div></div>
+</div>
+<dialog id="zoom"><img id="zoomImg" onclick="this.parentElement.close()"></dialog>
+<script>
+let curRun = null;
+
+async function loadRuns() {
+  const rs = await (await fetch('/api/runs')).json();
+  const el = document.getElementById('runs');
+  el.innerHTML = rs.map(r => `
+    <div class="run-item ${curRun===r.run_id?'active':''}" onclick="sel('${r.run_id}')">
+      <div class="rid">${r.run_id}</div>
+      <div class="rmeta">${r.subject} · rev${r.revision} · ${r.size} · ${r.created_at}</div>
+    </div>`).join('') || '<div class="empty">暂无 run</div>';
+}
+
+async function sel(runId) {
+  curRun = runId;
+  loadRuns();
+  const d = await (await fetch(`/api/runs/${runId}/candidates`)).json();
+  curData = d;
+  render(d);
+}
+
+function badge(s) {
+  return `<span class="badge b-${s}">${s}</span>`;
+}
+
+function render(d) {
+  const m = document.getElementById('main');
+  const cards = d.candidates.map(c => {
+    const rep = c.gate_report || {};
+    const mech = (rep.checks||[]).map(x =>
+      `<div class="${x.pass?'p':'f'}">${x.pass?'✓':'✗'} ${x.name}: ${x.detail}</div>`).join('');
+    const l3 = rep.l3 ? (rep.l3.results||[]).map(x =>
+      `<div class="${x.ok?'p':'f'}">${x.ok?'✓':'✗'} ${x.source}${x.ok?'':' — '+x.answer}</div>`).join('') : '';
+    return `
+    <div class="card">
+      <img src="/api/images/${d.run.subject}/${d.run.run_id}/${c.file}"
+           onclick="zoom(this.src)" loading="lazy">
+      <div class="bar">
+        <span>#${c.idx}</span> ${badge(c.status)}
+        ${c.reject_code ? `<span style="color:var(--dim);font-size:11px">${c.reject_code}</span>` : ''}
+        <span class="spacer"></span>
+        <button class="ok" onclick="act('accept',${c.idx})">接受</button>
+        <button class="no" onclick="act('reject',${c.idx})">拒绝</button>
+      </div>
+      ${(mech||l3) ? `<div class="checks">${mech}${l3}</div>` : ''}
+    </div>`;
+  }).join('');
+  m.innerHTML = `
+    <div><b>${d.run.subject}</b> · ${d.run.run_id} · rev${d.run.revision} · ${d.run.size}</div>
+    <div class="prompt">${d.run.prompt}</div>
+    <div class="grid">${cards}</div>`;
+}
+
+async function act(kind, idx) {
+  if (kind === 'reject') {
+    const code = prompt('拒绝码（style_drift / composition / constraint_violation / other）:', 'manual');
+    if (code === null) return;
+    await fetch(`/api/runs/${curRun}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST'});
+  } else {
+    await fetch(`/api/runs/${curRun}/candidates/${idx}/accept`, {method:'POST'});
+  }
+  sel(curRun);
+}
+
+function zoom(src) {
+  document.getElementById('zoomImg').src = src;
+  document.getElementById('zoom').showModal();
+}
+
+loadRuns();
+</script>
+</body>
+</html>

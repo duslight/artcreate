@@ -1,0 +1,17 @@
+# 场景线闭环验收 spec（阶段4-C）
+subject: "forgotten-shrine"
+revision: 1
+description: "森林深处一座被苔藓覆盖的废弃石祠，断裂的石柱斜插在地，晨雾缭绕"
+extra_prompt: ""
+asset_type: environment_wide
+mood: fog_veil
+art_style: pixel_classic
+size: "2688x1792"
+count: 4
+
+constraints:
+  axis_sel:
+    human_trace: present      # 石祠本身就是人工痕迹——上次 stats 暴露的轴选错教训
+    water: none
+    enclosure: open
+  free_text: ""

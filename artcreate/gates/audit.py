@@ -38,21 +38,35 @@ Answer STRICT JSON only:
 Paraphrase is fine; only flag meaning loss, contradiction, or added objects/scenes."""
 
 
-def audit_compilation(spec: dict, compiled_prompt: str) -> dict:
+def audit_compilation(spec: dict, compiled_prompt: str,
+                      segments: dict = None) -> dict:
     """L2：返回 {coverage, intrusion, verdict}。失败返回 verdict=error（不阻断）。
-    系统注入段（媒介前缀/画风尾块/strictly no）在送审前程序侧剥离——
-    LLM 只审用户域，避免把系统段误判为越权。"""
+    程序侧剥离全部系统/派生段（媒介前缀/扩展词/氛围/正向引导/负向块/画风尾块），
+    LLM 只审用户域两段：scene_core（对 description 的忠实转译）与 extra（细化项）。
+    小模型指令遵循不稳——能程序侧解决的绝不托付 prompt。"""
     cfg = get_config()
-    # 程序侧剥离：画风尾块
-    style_id = spec.get("art_style", cfg.defaults["art_style"])
-    style = cfg.art_styles.get(style_id) or cfg.art_styles[cfg.defaults["art_style"]]
-    audited = compiled_prompt.replace(style["suffix"], "")
-    # 剥离媒介前缀
-    at_id = spec.get("asset_type", cfg.defaults["asset_type"])
-    audited = audited.replace(cfg.asset_types[at_id]["prefix"], "")
-    # 剥离 strictly no 负向块（轴约束的落地形式，程序已保证正确性）
+    audited = compiled_prompt
+    if segments:
+        style_id = spec.get("art_style", cfg.defaults["art_style"])
+        style = cfg.art_styles.get(style_id) or cfg.art_styles[cfg.defaults["art_style"]]
+        for part in (style["suffix"], segments.get("media_prefix"),
+                     segments.get("scene_expansion"), segments.get("mood_inject"),
+                     segments.get("atmosphere_notes"),
+                     segments.get("extra_en"),
+                     *segments.get("positives", [])):
+            if part:
+                audited = audited.replace(part, "")
+    else:
+        # 无 segments 时退回保守剥离（画风尾块 + 前缀 + strictly no）
+        style_id = spec.get("art_style", cfg.defaults["art_style"])
+        style = cfg.art_styles.get(style_id) or cfg.art_styles[cfg.defaults["art_style"]]
+        audited = compiled_prompt.replace(style["suffix"], "")
+        at_id = spec.get("asset_type", cfg.defaults["asset_type"])
+        audited = audited.replace(cfg.asset_types[at_id]["prefix"], "")
     import re as _re
     audited = _re.sub(r"strictly no [^,]*(?:, [^,]*)*(?=,|$)", "", audited)
+    audited = _re.sub(r"— [^,]*(?=,|$)", "", audited)
+    audited = ", ".join(p for p in (x.strip() for x in audited.split(",")) if p)
 
     try:
         raw = text_chat(L2_META_PROMPT
@@ -117,11 +131,31 @@ def audit_intent(image_path, spec: dict) -> dict:
     for q in _build_intent_questions(spec):
         try:
             ans = vlm_chat(b64, q["question"] + "（只回答 yes 或 no）")
-            ok = "yes" in ans.lower() and "no" not in ans.lower().split("yes")[0]
-            results.append({**q, "answer": ans.strip()[:20], "ok": bool(ok)})
+            ok = _parse_yesno(ans, q["expect"])
+            results.append({**q, "answer": ans.strip()[:40], "ok": bool(ok)})
         except Exception as e:
             results.append({**q, "answer": f"error: {e}", "ok": None})
     judged = [r for r in results if r["ok"] is not None]
     violated = [r for r in judged if not r["ok"]]
     rate = len(violated) / len(judged) if judged else None
     return {"results": results, "violation_rate": rate}
+
+
+def _parse_yesno(ans: str, expect: str) -> bool:
+    """中英文 yes/no 解析。expect='yes'：肯定回答=满足。
+    处理："yes"/"no"/"是的"/"没有（是没有水体→满足'无水体'问句时仍需肯定）"。
+    问句全部构造成"是否满足约束"形式，肯定（yes/是/有的/可以看到）=满足。"""
+    a = ans.strip().lower()
+    # 中文否定词开头 → 不满足
+    if a.startswith(("不", "没有。", "没。", "否", "无。")) or a == "没有":
+        return False
+    # 中文肯定开头 → 满足
+    if a.startswith(("是", "有", "可以", "能", "对")):
+        return True
+    # 英文
+    if a.startswith(("yes", "correct", "true")):
+        return True
+    if a.startswith(("no", "false", "not")):
+        return False
+    # 兜底：包含判定
+    return a.startswith("yes") if expect == "yes" else not a.startswith("yes")

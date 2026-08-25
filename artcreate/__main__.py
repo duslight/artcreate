@@ -73,22 +73,19 @@ def cmd_lint(spec_path: str):
     return warnings
 
 
-def cmd_run(spec_path: str):
+def _execute_run(spec: dict, refs=None):
+    """run 与 regenerate 共用的执行体：编译→lint→生成→后处理→manifest→注册。
+    refs 已解析为绝对路径列表或 None。"""
     cfg = get_config()
-    spec_path = Path(spec_path)
-    spec = load_spec(str(spec_path))
     d = cfg.defaults
     size = spec.get("size", d["size"])
     count = spec.get("count", d["count"])
-    refs = resolve_refs(spec, spec_path.parent)
     cfg.validate_size(size, with_ref=bool(refs))
 
-    # 1. 编译
     result = compile_prompt(spec)
     print("=== 编译产物 ===")
     print(result["prompt"][:300] + ("..." if len(result["prompt"]) > 300 else ""))
 
-    # 2. L1 lint（block 级警告中止）
     warnings = lint_spec(spec, result["prompt"])
     print("\n=== L1 lint ===")
     print(format_warnings(warnings))
@@ -96,12 +93,10 @@ def cmd_run(spec_path: str):
         print("\n⛔ 存在 block 级问题，链路中止（未产生任何费用）")
         return None
 
-    # 3. 生成
     print(f"\n=== 生成（provider={cfg.active_provider}, count={count}）===")
     raw_urls = generate(result["prompt"], size, count, ref_images=refs)
     print(f"获得 {len(raw_urls)} 张候选")
 
-    # 4. 后处理 + 资产契约落盘
     run_id = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     subject = spec.get("subject", "unnamed")
     out_dir = cfg.root / "exports" / subject / run_id
@@ -129,11 +124,13 @@ def cmd_run(spec_path: str):
             for m in post_meta
         ],
     }
+    if spec.get("parent_run"):
+        manifest["parent_run"] = spec["parent_run"]
+
     manifest_path = out_dir / "manifest.json"
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
 
-    # 5. 注册进资产库（阶段2）
     import artcreate.store as store
     store.register_run(manifest)
 
@@ -141,10 +138,51 @@ def cmd_run(spec_path: str):
     print(f"资产目录：{out_dir}")
     print(f"manifest：{manifest_path}")
     print(f"库注册：{len(post_meta)} 候选（run_id={run_id}）")
+    if spec.get("parent_run"):
+        print(f"父 run：{spec['parent_run']}（再生来源）")
     print(f"挑选入库：python -m artcreate select {subject} {run_id} <序号>")
     return manifest
 
 
+def cmd_run(spec_path: str):
+    spec_path = Path(spec_path)
+    spec = load_spec(str(spec_path))
+    refs = resolve_refs(spec, spec_path.parent)
+    return _execute_run(spec, refs)
+
+
+def cmd_regenerate(subject: str, run_id: str = None):
+    """从库读原 run spec → 复制为新 run（同 revision，记 parent_run 溯源链）。"""
+    import artcreate.store as store
+    if not run_id:
+        row = store.latest_run(subject)
+        if not row:
+            print(f"subject {subject} 无任何 run")
+            return
+        run_id = row["run_id"]
+    run = store.db().execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
+    if not run:
+        print(f"run {run_id} 不在库中")
+        return
+    spec = json.loads(run["spec"])
+    spec["parent_run"] = run_id          # 溯源链：新 run 可追到父
+    refs = spec.get("ref_images") or None
+    print(f"=== 再生：{subject} ← run {run_id}（revision {run['revision']} 不变）===")
+    return _execute_run(spec, refs)
+
+
+def cmd_run(spec_path: str):
+    cfg = get_config()
+    spec_path = Path(spec_path)
+    spec = load_spec(str(spec_path))
+    d = cfg.defaults
+    size = spec.get("size", d["size"])
+    count = spec.get("count", d["count"])
+    refs = resolve_refs(spec, spec_path.parent)
+    cfg.validate_size(size, with_ref=bool(refs))
+
+    # 1. 编译
+    result = compile_prompt(spec)
 def cmd_list(subject=None, status=None):
     import artcreate.store as store
     rows = store.list_candidates(subject=subject, status=status)
@@ -209,7 +247,8 @@ def cmd_diagnose(subject: str, run_id: str = None, idx: int = None):
     spec = json.loads(run["spec"])
 
     print(f"=== L2 编译自检（run={run_id}）===")
-    l2 = audit_compilation(spec, run["prompt"])
+    l2 = audit_compilation(spec, run["prompt"],
+                           segments=json.loads(run["segments"]))
     if l2["verdict"] == "pass":
         print("  通过：编译产物忠实覆盖全部表单项，无越权内容")
     else:
@@ -324,6 +363,13 @@ def main():
     p = sub.add_parser("stats")
     p.add_argument("--subject", "-s", default=None)
 
+    p = sub.add_parser("serve")
+    p.add_argument("--port", type=int, default=8870)
+
+    p = sub.add_parser("regenerate")
+    p.add_argument("subject")
+    p.add_argument("run_id", nargs="?", default=None)
+
     args = ap.parse_args()
     if args.cmd == "run":
         cmd_run(args.spec)
@@ -344,6 +390,12 @@ def main():
     elif args.cmd == "stats":
         from artcreate.gates.stats import format_stats
         print(format_stats(args.subject))
+    elif args.cmd == "serve":
+        from artcreate.server import serve
+        print(f"评审视图：http://127.0.0.1:{args.port}")
+        serve(args.port)
+    elif args.cmd == "regenerate":
+        cmd_regenerate(args.subject, args.run_id)
 
 
 if __name__ == "__main__":
