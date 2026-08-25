@@ -1,0 +1,22 @@
+# 示例 spec：一次场景生成任务的完整输入
+# 用法：python -m artcreate run specs/example_scene.yaml
+subject: "ancient-library"        # 资产主题（exports 目录名）
+revision: 1                       # spec 修订链（D21：每次改稿 +1）
+
+description: "一座被遗忘的古代图书馆，高耸的书架通向穹顶，漂浮的尘埃在光线中起舞"
+extra_prompt: ""
+asset_type: environment_wide      # 资产类型（project.yaml asset_types 键）
+mood: hallowed_rays               # 氛围（project.yaml moods 键）
+art_style: pixel_classic          # 画风（project.yaml art_styles 键）
+size: "2688x1792"                 # 分辨率档位
+count: 2                          # 候选张数（批量是默认）
+
+constraints:
+  axis_sel:
+    human_trace: natural          # 完全自然
+    water: none                   # 无水体
+  free_text: ""                   # 自由文本约束（会被 L1 lint 盯防负向注入）
+
+# 参考图（可选；改稿循环=原图作参考+编辑指令，D19/D20/D21）
+# ref_images:
+#   - ../exports/ancient-library/xxx/out_1.png
