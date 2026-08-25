@@ -15,10 +15,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import store
+from . import workbench
 from .store import db, accept, reject, latest_run
 from .tools.config import get_config
 
 app = FastAPI(title="artcreate review")
+app.include_router(workbench.router)
 cfg = get_config()
 
 

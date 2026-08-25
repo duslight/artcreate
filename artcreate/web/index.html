@@ -103,20 +103,54 @@ function render(d) {
     </div>`;
   }).join('');
   m.innerHTML = `
-    <div><b>${d.run.subject}</b> · ${d.run.run_id} · rev${d.run.revision} · ${d.run.size}</div>
+    <div><b>${d.run.subject}</b> · ${d.run.run_id} · rev${d.run.revision} · ${d.run.size}
+      <button onclick="showLineage()" style="margin-left:8px">迭代链</button>
+      <button onclick="regen()" style="margin-left:4px">再生一批</button></div>
     <div class="prompt">${d.run.prompt}</div>
+    <div id="lineage"></div>
     <div class="grid">${cards}</div>`;
+}
+
+async function regen() {
+  if (!confirm('同 spec 再生成一批？（revision 不变，记录迭代链）')) return;
+  const r = await fetch(`/api/runs/${curRun}/regenerate`, {method:'POST', headers:H()});
+  if (r.ok) { const j = await r.json(); alert('已入队，任务 #' + j.job_id); loadRuns(); }
+  else alert('入队失败');
 }
 
 async function act(kind, idx) {
   if (kind === 'reject') {
     const code = prompt('拒绝码（style_drift / composition / constraint_violation / other）:', 'manual');
     if (code === null) return;
-    await fetch(`/api/runs/${curRun}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST'});
+    await fetch(`/api/runs/${curRun}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
   } else {
-    await fetch(`/api/runs/${curRun}/candidates/${idx}/accept`, {method:'POST'});
+    await fetch(`/api/runs/${curRun}/candidates/${idx}/accept`, {method:'POST', headers:H()});
   }
   sel(curRun);
+}
+
+// ---- 轻量身份 + 工作台联动 ----
+function meId() {
+  let v = localStorage.getItem('ac-uuid');
+  if (!v) { v = 'u-' + Math.random().toString(36).slice(2, 10); localStorage.setItem('ac-uuid', v); }
+  return v;
+}
+function H() {
+  const h = { 'X-Actor-Id': meId() };
+  if (localStorage.getItem('ac-name')) h['X-Actor-Name'] = localStorage.getItem('ac-name');
+  const t = localStorage.getItem('ac-token');
+  if (t) h['X-Token'] = t;
+  return h;
+}
+async function showLineage() {
+  const d = await (await fetch(`/api/runs/${curRun}/lineage`, {headers:H()})).json();
+  const chain = [...d.ancestors, {run_id: curRun, cur: true}, ...d.children];
+  const html = `<div class="lin">${chain.map(n =>
+    `<span class="node ${n.cur?'cur':''}" onclick="sel('${n.run_id}')">${n.run_id}${n.revision ? ' · rev' + n.revision : ''}</span>`
+    + (n === d.ancestors[d.ancestors.length-1] ? ' → ' : '')).join('')}</div>`;
+  // 简单纵向排列（迭代链）
+  document.getElementById('lineage').innerHTML =
+    `<div style="color:var(--dim);font-size:12px;margin-top:10px">迭代链（旧 → 新，点击切换）</div>` + html;
 }
 
 function zoom(src) {
@@ -124,7 +158,10 @@ function zoom(src) {
   document.getElementById('zoom').showModal();
 }
 
-loadRuns();
+loadRuns().then(() => {
+  const go = localStorage.getItem('ac-goto-run');
+  if (go) { localStorage.removeItem('ac-goto-run'); sel(go); }
+});
 </script>
 </body>
 </html>

@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>artcreate · 工作台</title>
+<style>
+  :root { --bg:#141517; --panel:#1e2023; --line:#2c2f33; --txt:#d8dad9;
+          --dim:#8a8f94; --acc:#4f9cf9; --ok:#3fb96f; --bad:#e05555; --warn:#e0a34f;
+          --gold:#e0c34f; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--txt);
+         font:14px/1.6 "Segoe UI",system-ui,sans-serif; padding:12px; max-width:960px; margin:0 auto; }
+  h1 { font-size:17px; margin-bottom:2px; }
+  .sub { color:var(--dim); font-size:12px; margin-bottom:12px; }
+  nav { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+  nav button { padding:6px 14px; }
+  nav button.on { background:#2b3138; outline:1px solid var(--acc); }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:14px; }
+  label { display:block; font-size:12px; color:var(--dim); margin:10px 0 4px; }
+  input[type=text], textarea, select {
+    width:100%; background:#191b1e; color:var(--txt); border:1px solid var(--line);
+    border-radius:6px; padding:8px 10px; font-size:14px; }
+  textarea { resize:vertical; min-height:56px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > div { flex:1; min-width:140px; }
+  .axis { margin-top:8px; }
+  .axis .opts { display:flex; gap:6px; flex-wrap:wrap; }
+  .axis .opt { background:#22252a; border:1px solid var(--line); border-radius:14px;
+               padding:4px 12px; cursor:pointer; font-size:13px; user-select:none; }
+  .axis .opt.on { background:#2b3138; outline:1px solid var(--acc); color:var(--acc); }
+  .axis .opt .src { font-size:10px; margin-left:4px; }
+  .src-distilled { color:var(--gold); }
+  .src-project { color:var(--ok); }
+  .src-base { color:var(--dim); }
+  .go { background:#1f4a30; color:var(--ok); border:1px solid var(--ok);
+        padding:9px 22px; font-size:14px; margin-top:14px; }
+  .job { border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:8px; background:#22252a; }
+  .job .meta { color:var(--dim); font-size:12px; }
+  .st-queued { color:var(--dim); } .st-running { color:var(--acc); }
+  .st-done { color:var(--ok); } .st-error { color:var(--bad); }
+  .ev { border-left:2px solid var(--line); padding:6px 12px; margin-bottom:8px; }
+  .ev .who { color:var(--acc); font-size:13px; }
+  .ev .what { font-size:13px; }
+  .ev .when { color:var(--dim); font-size:11px; }
+  .ev .det { color:var(--dim); font-size:12px; word-break:break-all; }
+  .ev img { max-width:160px; border-radius:4px; margin-top:4px; display:block; }
+  .lin { font-size:13px; }
+  .lin .node { padding:4px 10px; border:1px solid var(--line); border-radius:6px;
+               display:inline-block; margin:3px 4px; }
+  .lin .cur { outline:1px solid var(--acc); color:var(--acc); }
+  .empty { color:var(--dim); padding:30px; text-align:center; }
+  .idbox { font-size:12px; color:var(--dim); margin-top:10px; }
+  .idbox input { width:auto; display:inline-block; }
+</style>
+</head>
+<body>
+<h1>artcreate · 工作台</h1>
+<div class="sub">表单生成 · 任务队列 · 操作时间线（多端同步）</div>
+
+<nav>
+  <button id="nav-new" class="on" onclick="show('new')">新建生成</button>
+  <button id="nav-jobs" onclick="show('jobs')">任务</button>
+  <button id="nav-feed" onclick="show('feed')">时间线</button>
+  <button id="nav-review" onclick="location.href='/'">评审视图 →</button>
+</nav>
+
+<div id="page-new" class="panel" style="display:none">
+  <div class="row">
+    <div><label>subject（资产名）</label><input type="text" id="f-subject" value=""></div>
+    <div><label>描述（中文一句话）</label><input type="text" id="f-desc" placeholder="例：森林深处一座废弃石祠，晨雾缭绕"></div>
+  </div>
+  <div class="row">
+    <div><label>资产类型</label><select id="f-atype"></select></div>
+    <div><label>画风</label><select id="f-style"></select></div>
+  </div>
+  <div class="row">
+    <div><label>氛围</label><select id="f-mood"></select></div>
+    <div><label>尺寸</label><select id="f-size"></select></div>
+    <div><label>数量</label><select id="f-count"></select></div>
+  </div>
+  <label>约束轴</label>
+  <div id="f-axes"></div>
+  <label>自由约束（可选，正向表述）</label>
+  <textarea id="f-free" placeholder="例：画面重心偏左，右侧留白"></textarea>
+  <button class="go" onclick="submitJob()">提交生成任务</button>
+  <div class="idbox">身份：<input type="text" id="f-me" placeholder="你的名字（跨设备看是谁操作）" oninput="saveMe()"> <span id="f-me-id"></span></div>
+</div>
+
+<div id="page-jobs" class="panel" style="display:none">
+  <div id="jobs-list">加载中…</div>
+</div>
+
+<div id="page-feed" class="panel" style="display:none">
+  <div class="row" style="margin-bottom:10px">
+    <div><label>筛选动作</label><select id="ev-action" onchange="loadFeed()">
+      <option value="">全部</option></select></div>
+    <div><label>筛选人</label><select id="ev-actor" onchange="loadFeed()">
+      <option value="">全部</option></select></div>
+  </div>
+  <div id="feed"></div>
+  <button onclick="loadFeed()">刷新</button>
+</div>
+
+<div id="page-lineage" style="display:none"></div>
+
+<script>
+let DICT = null;
+let axisSel = {};
+let pollTimer = null;
+
+// ---- 轻量身份 ----
+function meId() {
+  let v = localStorage.getItem('ac-uuid');
+  if (!v) {
+    v = 'u-' + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem('ac-uuid', v);
+  }
+  return v;
+}
+function meName() { return localStorage.getItem('ac-name') || ''; }
+function saveMe() { localStorage.setItem('ac-name', document.getElementById('f-me').value); }
+document.getElementById('f-me').value = meName();
+document.getElementById('f-me-id').textContent = meId();
+function actorHeaders() {
+  const h = { 'X-Actor-Id': meId() };
+  if (meName()) h['X-Actor-Name'] = meName();
+  return h;
+}
+// 令牌（若服务端配置了 WORKBENCH_TOKEN，首次访问用 ?token=xxx 进入后记住）
+const qs = new URLSearchParams(location.search);
+if (qs.get('token')) localStorage.setItem('ac-token', qs.get('token'));
+function tok() { const t = localStorage.getItem('ac-token'); return t ? {'X-Token': t} : {}; }
+function H() { return { ...actorHeaders(), ...tok() }; }
+
+// ---- 页面切换 ----
+function show(p) {
+  for (const x of ['new', 'jobs', 'feed']) {
+    document.getElementById('page-' + x).style.display = x === p ? '' : 'none';
+    document.getElementById('nav-' + x).classList.toggle('on', x === p);
+  }
+  if (p === 'jobs') loadJobs(true);
+  if (p === 'feed') loadFeed();
+}
+
+// ---- 表单 ----
+async function loadDict() {
+  DICT = await (await fetch('/api/form/dict', {headers: H()})).json();
+  fill('f-atype', DICT.asset_types, 'label');
+  fill('f-style', DICT.art_styles, 'label');
+  fill('f-mood', DICT.moods, 'label');
+  fill('f-size', DICT.sizes, 'label');
+  const cnt = document.getElementById('f-count');
+  for (const n of [1, 2, 4, 6, 8]) cnt.insertAdjacentHTML('beforeend', `<option ${n===DICT.defaults.count?'selected':''}>${n}</option>`);
+  const ax = document.getElementById('f-axes');
+  ax.innerHTML = DICT.constraint_axes.map(a => `
+    <div class="axis"><span style="color:var(--dim);font-size:12px">${a.label}</span>
+      <div class="opts">${a.options.map(o => `
+        <span class="opt" data-axis="${a.id}" data-opt="${o.id}" onclick="pickAxis(this)">
+          ${o.label}<span class="src src-${o.source}">${o.source === 'distilled' ? '★' : o.source === 'project' ? '·' : ''}</span>
+        </span>`).join('')}
+      </div>
+    </div>`).join('');
+  // 默认全选 any
+  document.querySelectorAll('#f-axes .opt').forEach(el => {
+    if (el.dataset.opt === 'any') { el.classList.add('on'); axisSel[el.dataset.axis] = 'any'; }
+  });
+  // defaults
+  document.getElementById('f-atype').value = DICT.defaults.asset_type;
+  document.getElementById('f-style').value = DICT.defaults.art_style;
+  document.getElementById('f-mood').value = DICT.defaults.mood;
+  document.getElementById('f-size').value = DICT.defaults.size;
+}
+function fill(id, dict, labelf) {
+  const el = document.getElementById(id);
+  for (const [k, v] of Object.entries(dict))
+    el.insertAdjacentHTML('beforeend', `<option value="${k}">${v[labelf] || k}</option>`);
+}
+function pickAxis(el) {
+  const axis = el.dataset.axis;
+  document.querySelectorAll(`.opt[data-axis="${axis}"]`).forEach(x => x.classList.remove('on'));
+  el.classList.add('on');
+  axisSel[axis] = el.dataset.opt;
+}
+
+async function submitJob() {
+  const spec = {
+    subject: document.getElementById('f-subject').value.trim() || 'unnamed',
+    description: document.getElementById('f-desc').value.trim(),
+    asset_type: document.getElementById('f-atype').value,
+    art_style: document.getElementById('f-style').value,
+    mood: document.getElementById('f-mood').value,
+    size: document.getElementById('f-size').value,
+    count: parseInt(document.getElementById('f-count').value),
+    constraints: { axis_sel: axisSel, free_text: document.getElementById('f-free').value.trim() },
+  };
+  if (!spec.description) { alert('描述必填'); return; }
+  const r = await fetch('/api/jobs', { method: 'POST', headers: {'Content-Type': 'application/json', ...H()}, body: JSON.stringify(spec) });
+  const d = await r.json();
+  if (r.status !== 200) {
+    alert('提交被拦截：\n' + (d.detail?.message || JSON.stringify(d.detail || d)));
+    return;
+  }
+  if (d.warnings?.length) alert('提示：\n' + d.warnings.map(w => w.message).join('\n'));
+  show('jobs');
+}
+
+// ---- 任务 ----
+async function loadJobs(auto) {
+  const js = await (await fetch('/api/jobs', {headers: H()})).json();
+  const el = document.getElementById('jobs-list');
+  el.innerHTML = js.map(j => `
+    <div class="job">
+      <span class="st-${j.status}">● ${j.status}</span>
+      <span class="meta">#${j.id} · ${j.actor_name || j.actor_id} · ${j.created_at}</span>
+      ${j.run_id ? `<div><a href="/#run-${j.run_id}" onclick="goReview('${j.run_id}')">→ 查看候选 ${j.run_id}</a></div>` : ''}
+      ${j.progress && j.status === 'running' ? `<div class="meta">${j.progress}…</div>` : ''}
+      ${j.error ? `<div class="meta" style="color:var(--bad);white-space:pre-wrap">${j.error.split('\n')[0]}</div>` : ''}
+    </div>`).join('') || '<div class="empty">暂无任务</div>';
+  if (auto) {
+    clearInterval(pollTimer);
+    if (js.some(j => j.status === 'queued' || j.status === 'running'))
+      pollTimer = setInterval(() => loadJobs(true), 3000);
+    else clearInterval(pollTimer);
+  }
+}
+function goReview(runId) {
+  localStorage.setItem('ac-goto-run', runId);
+  location.href = '/';
+}
+
+// ---- 时间线 ----
+async function loadFeed() {
+  const [evs, acts, actors] = await Promise.all([
+    fetch(`/api/events?limit=100${document.getElementById('ev-action').value ? '&action=' + document.getElementById('ev-action').value : ''}${document.getElementById('ev-actor').value ? '&actor_id=' + document.getElementById('ev-actor').value : ''}`, {headers: H()}).then(r => r.json()),
+    fetch('/api/events?limit=200', {headers: H()}).then(r => r.json()),
+  ]);
+  // 筛选项填充（一次性）
+  const actSel = document.getElementById('ev-action');
+  const acts_set = [...new Set(actors.map(e => e.action))].sort();
+  if (actSel.options.length <= 1) acts_set.forEach(a => actSel.insertAdjacentHTML('beforeend', `<option>${a}</option>`));
+  const whoSel = document.getElementById('ev-actor');
+  const who_set = [...new Set(actors.map(e => e.actor_name || e.actor_id))].sort();
+  if (whoSel.options.length <= 1) {
+    actors.forEach(e => {}); // noop
+    const idMap = {};
+    actors.forEach(e => { idMap[e.actor_name || e.actor_id] = e.actor_id; });
+    who_set.forEach(w => whoSel.insertAdjacentHTML('beforeend', `<option value="${idMap[w]}">${w}</option>`));
+  }
+  const el = document.getElementById('feed');
+  el.innerHTML = evs.map(e => `
+    <div class="ev">
+      <div><span class="who">${e.actor_name || e.actor_id}</span>
+        <span class="what"> ${actionZh(e.action)} ${e.target_id ? `<code style="font-size:11px">${e.target_id}</code>` : ''}</span></div>
+      <div class="when">${e.ts}${e.run_id ? ` · <a href="javascript:;" onclick="goReview('${e.run_id}')">${e.run_id}</a>` : ''}</div>
+      ${e.detail?.description ? `<div class="det">“${e.detail.description}”</div>` : ''}
+      ${e.detail?.subject ? `<div class="det">subject: ${e.detail.subject}${e.detail.parent_run ? ' · 再生自 ' + e.detail.parent_run : ''}</div>` : ''}
+    </div>`).join('') || '<div class="empty">暂无事件</div>';
+}
+function actionZh(a) {
+  return { run_created: '发起了生成', accepted: '定稿了', rejected: '拒绝了',
+           regenerate: '再生了', axis_promoted: '晋升了选项',
+           proposal_rejected: '驳回了提案', undo: '撤销了操作', redo: '重做了操作' }[a] || a;
+}
+
+show('new');
+loadDict();
+</script>
+</body>
+</html>

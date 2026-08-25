@@ -82,73 +82,12 @@ def cmd_lint(spec_path: str):
 
 
 def _execute_run(spec: dict, refs=None):
-    """run 与 regenerate 共用的执行体：编译→lint→生成→后处理→manifest→注册。
-    refs 已解析为绝对路径列表或 None。"""
-    cfg = get_config()
-    d = cfg.defaults
-    size = spec.get("size", d["size"])
-    count = spec.get("count", d["count"])
-    cfg.validate_size(size, with_ref=bool(refs))
-
-    result = compile_prompt(spec)
-    print("=== 编译产物 ===")
-    print(result["prompt"][:300] + ("..." if len(result["prompt"]) > 300 else ""))
-
-    warnings = lint_spec(spec, result["prompt"])
-    print("\n=== L1 lint ===")
-    print(format_warnings(warnings))
-    if any(w["level"] == "block" for w in warnings):
-        print("\n⛔ 存在 block 级问题，链路中止（未产生任何费用）")
-        return None
-
-    print(f"\n=== 生成（provider={cfg.active_provider}, count={count}）===")
-    raw_urls = generate(result["prompt"], size, count, ref_images=refs)
-    print(f"获得 {len(raw_urls)} 张候选")
-
-    run_id = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
-    subject = spec.get("subject", "unnamed")
-    out_dir = cfg.root / "exports" / subject / run_id
-    post_meta = process_run(raw_urls, out_dir)
-
-    manifest = {
-        "schema": 1,
-        "run_id": run_id,
-        "subject": subject,
-        "spec_revision": spec.get("revision", 1),
-        "spec": spec,
-        "prompt": result["prompt"],
-        "prompt_segments": result["segments"],
-        "lint_warnings": warnings,
-        "provider": cfg.active_provider,
-        "model": cfg.provider_conf().get("model"),
-        "size": size,
-        "count": count,
-        "ref_images": refs,
-        "candidates": [
-            {"index": m["index"], "file": f"out_{m['index']}.png",
-             "w": m["w"], "h": m["h"],
-             "grid_w": m["grid_w"], "grid_h": m["grid_h"],
-             "status": "generated"}
-            for m in post_meta
-        ],
-    }
-    if spec.get("parent_run"):
-        manifest["parent_run"] = spec["parent_run"]
-
-    manifest_path = out_dir / "manifest.json"
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, ensure_ascii=False, indent=2)
-
-    import artcreate.store as store
-    store.register_run(manifest)
-
-    print(f"\n=== 完成 ===")
-    print(f"资产目录：{out_dir}")
-    print(f"manifest：{manifest_path}")
-    print(f"库注册：{len(post_meta)} 候选（run_id={run_id}）")
-    if spec.get("parent_run"):
-        print(f"父 run：{spec['parent_run']}（再生来源）")
-    print(f"挑选入库：python -m artcreate select {subject} {run_id} <序号>")
+    """CLI 执行体代理 → pipeline.execute_run（与 web worker 共用一条链路）。"""
+    from .pipeline import execute_run
+    manifest = execute_run(spec, refs)
+    if manifest:
+        subject = manifest["subject"]
+        print(f"挑选入库：python -m artcreate select {subject} {manifest['run_id']} <序号>")
     return manifest
 
 
