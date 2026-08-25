@@ -62,6 +62,7 @@
   <button id="nav-new" class="on" onclick="show('new')">新建生成</button>
   <button id="nav-jobs" onclick="show('jobs')">任务</button>
   <button id="nav-feed" onclick="show('feed')">时间线</button>
+  <button id="nav-prop" onclick="show('prop')">提案<span id="prop-badge" style="display:none;background:var(--gold);color:#141517;border-radius:8px;font-size:10px;padding:0 5px;margin-left:3px">0</span></button>
   <button id="nav-review" onclick="location.href='/'">评审视图 →</button>
 </nav>
 
@@ -102,6 +103,17 @@
   <button onclick="loadFeed()">刷新</button>
 </div>
 
+<div id="page-prop" class="panel" style="display:none">
+  <div style="display:flex;gap:8px;margin-bottom:10px">
+    <button onclick="loadProp('pending')" id="pbtn-pending">待定</button>
+    <button onclick="loadProp('promoted')" id="pbtn-promoted">已晋升</button>
+    <button onclick="loadProp('rejected')" id="pbtn-rejected">已驳回</button>
+    <span class="spacer" style="flex:1"></span>
+    <button onclick="runDistill()">立即蒸馏一轮</button>
+  </div>
+  <div id="prop-list">加载中…</div>
+</div>
+
 <div id="page-lineage" style="display:none"></div>
 
 <script>
@@ -135,12 +147,65 @@ function H() { return { ...actorHeaders(), ...tok() }; }
 
 // ---- 页面切换 ----
 function show(p) {
-  for (const x of ['new', 'jobs', 'feed']) {
+  for (const x of ['new', 'jobs', 'feed', 'prop']) {
     document.getElementById('page-' + x).style.display = x === p ? '' : 'none';
     document.getElementById('nav-' + x).classList.toggle('on', x === p);
   }
   if (p === 'jobs') loadJobs(true);
   if (p === 'feed') loadFeed();
+  if (p === 'prop') loadProp('pending');
+}
+
+// ---- 提案（D22 蒸馏晋升） ----
+let propFilter = 'pending';
+async function loadProp(status) {
+  propFilter = status || propFilter;
+  ['pending','promoted','rejected'].forEach(s =>
+    document.getElementById('pbtn-' + s).classList.toggle('on', s === propFilter));
+  const ps = await (await fetch('/api/proposals?status=' + propFilter, {headers: H()})).json();
+  // 徽标：待定数
+  const pend = await (await fetch('/api/proposals?status=pending', {headers: H()})).json();
+  const badge = document.getElementById('prop-badge');
+  badge.style.display = pend.length ? '' : 'none';
+  badge.textContent = pend.length;
+
+  const el = document.getElementById('prop-list');
+  el.innerHTML = ps.map(p => `
+    <div class="job">
+      <div><b>${p.axis_id}</b> ← “${p.sample_text}” <span class="meta">×${p.count} 次</span></div>
+      ${p.option_draft ? `<div style="font-size:13px;margin-top:4px">
+        新选项 <code>${p.option_draft.id}</code>「${p.option_draft.label}」
+        · 正向：${(p.option_draft.positive||[]).join(', ')||'—'}
+        · 负向：${(p.option_draft.negative||[]).join(', ')||'—'}</div>
+        <div class="meta">验图问句：${p.option_draft.verify_question||'—'}</div>` : ''}
+      <div class="meta">置信 ${((p.confidence||0)*100).toFixed(0)}% · ${p.reason||''}
+        ${p.decided_by ? ` · 由 ${p.decided_by} ${p.status==='promoted'?'晋升':'驳回'}` : ''}</div>
+      <div style="margin-top:6px">
+        ${p.status==='pending' ? `
+          <button class="ok" onclick="actProp(${p.id},'approve')">晋升</button>
+          <button class="no" onclick="actProp(${p.id},'reject')">驳回</button>` : ''}
+        ${p.status==='promoted' ? `<button onclick="actProp(${p.id},'undo')">撤销晋升</button>` : ''}
+        ${p.status==='rejected' ? `<button onclick="actProp(${p.id},'undo-reject')">恢复提案</button>` : ''}
+      </div>
+    </div>`).join('') || '<div class="empty">暂无' + (propFilter==='pending'?'提案（蒸馏会自动产出，也可手动触发）':'记录') + '</div>';
+}
+async function actProp(pid, kind) {
+  if (kind === 'reject' && !confirm('驳回该提案？')) return;
+  if (kind === 'approve' && !confirm('晋升为新选项？全部用户表单将出现该选项，且写入 derived 版本库')) return;
+  const r = await fetch(`/api/proposals/${pid}/${kind}`, {method:'POST', headers:H()});
+  const d = await r.json();
+  if (r.status !== 200) { alert('失败：' + JSON.stringify(d.detail || d)); return; }
+  if (d.git_commit) alert('已提交版本库 ' + d.git_commit);
+  loadProp(propFilter);
+  loadDict();  // 字典可能已变（晋升后表单刷新）
+}
+async function runDistill() {
+  const r = await fetch('/api/distill/run', {method:'POST', headers:H()});
+  const d = await r.json();
+  alert(r.status === 200
+    ? `蒸馏完成：采样 ${d.harvested} · LLM 判定 ${d.judged} · 新提案 ${d.new_proposals}`
+    : '失败：' + JSON.stringify(d.detail || d));
+  loadProp('pending');
 }
 
 // ---- 表单 ----
@@ -260,7 +325,8 @@ async function loadFeed() {
 function actionZh(a) {
   return { run_created: '发起了生成', accepted: '定稿了', rejected: '拒绝了',
            regenerate: '再生了', axis_promoted: '晋升了选项',
-           proposal_rejected: '驳回了提案', undo: '撤销了操作', redo: '重做了操作' }[a] || a;
+           proposal_rejected: '驳回了提案', undo: '撤销了操作', redo: '重做了操作',
+           distill_run: '运行了蒸馏' }[a] || a;
 }
 
 show('new');

@@ -111,3 +111,71 @@ def web_regenerate(run_id: str, request: Request, x_token: str = Header(None),
     jobs.init_jobs()
     job_id = jobs.submit_job(spec, _actor(x_actor_id, x_actor_name))
     return {"job_id": job_id, "parent_run": run_id}
+
+
+# ---------- 蒸馏与提案（D22） ----------
+@router.post("/api/distill/run")
+def api_distill(request: Request, x_token: str = Header(None),
+                x_actor_id: str = Header(None), x_actor_name: str = Header(None)):
+    """手动触发一轮蒸馏（worker 也会周期跑）。"""
+    _check_token(request, x_token)
+    from . import distill
+    distill.init_distill()
+    return distill.run_distill(actor=_actor(x_actor_id, x_actor_name))
+
+
+@router.get("/api/proposals")
+def api_proposals(status: str = None, request: Request = None,
+                  x_token: str = Header(None)):
+    _check_token(request, x_token)
+    from . import distill
+    distill.init_distill()
+    return distill.list_proposals(status)
+
+
+@router.post("/api/proposals/{pid}/approve")
+def api_approve(pid: int, request: Request, x_token: str = Header(None),
+                x_actor_id: str = Header(None), x_actor_name: str = Header(None)):
+    _check_token(request, x_token)
+    from . import distill
+    try:
+        return distill.approve(pid, actor=_actor(x_actor_id, x_actor_name))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@router.post("/api/proposals/{pid}/reject")
+def api_reject_proposal(pid: int, request: Request, body: dict = None,
+                        x_token: str = Header(None),
+                        x_actor_id: str = Header(None),
+                        x_actor_name: str = Header(None)):
+    _check_token(request, x_token)
+    from . import distill
+    try:
+        return distill.reject_proposal(pid, actor=_actor(x_actor_id, x_actor_name),
+                                       reason=(body or {}).get("reason", ""))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@router.post("/api/proposals/{pid}/undo")
+def api_undo(pid: int, request: Request, x_token: str = Header(None),
+             x_actor_id: str = Header(None), x_actor_name: str = Header(None)):
+    """撤销晋升（恢复提案 pending，从 derived 移除）。"""
+    _check_token(request, x_token)
+    from . import distill
+    try:
+        return distill.undo(pid, actor=_actor(x_actor_id, x_actor_name))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@router.post("/api/proposals/{pid}/undo-reject")
+def api_undo_reject(pid: int, request: Request, x_token: str = Header(None),
+                    x_actor_id: str = Header(None), x_actor_name: str = Header(None)):
+    _check_token(request, x_token)
+    from . import distill
+    try:
+        return distill.undo_reject(pid, actor=_actor(x_actor_id, x_actor_name))
+    except ValueError as e:
+        raise HTTPException(422, str(e))

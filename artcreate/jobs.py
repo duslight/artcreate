@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS jobs (
 """
 
 _worker_started = False
+_last_distill = 0.0
+_DISTILL_INTERVAL = 3600  # 空闲时每小时蒸馏一轮（D22 经验回写）
 
 
 def init_jobs():
@@ -112,6 +114,16 @@ def _worker_loop():
                 _conn().commit()
                 job = dict(row)
         if not job:
+            # 空闲时周期蒸馏（D22：拍板经验 → 晋升提案）
+            global _last_distill
+            now = time.time()
+            if now - _last_distill > _DISTILL_INTERVAL:
+                _last_distill = now
+                try:
+                    from .distill import run_distill
+                    run_distill()
+                except Exception:
+                    pass  # 蒸馏失败不影响 worker 主循环
             time.sleep(2)
             continue
 

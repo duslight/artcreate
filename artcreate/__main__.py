@@ -305,6 +305,21 @@ def main():
     p.add_argument("subject")
     p.add_argument("run_id", nargs="?", default=None)
 
+    p = sub.add_parser("distill")
+    p.add_argument("--min-count", type=int, default=3)
+    p.add_argument("--no-llm", action="store_true",
+                   help="跳过 LLM 判定（调试 harvest/聚类）")
+
+    p = sub.add_parser("proposals")
+    p.add_argument("--status", "-s", default=None,
+                   choices=["pending", "promoted", "rejected"])
+
+    p = sub.add_parser("promote")
+    p.add_argument("pid", type=int)
+
+    p = sub.add_parser("demote")
+    p.add_argument("pid", type=int)
+
     args = ap.parse_args()
     if args.cmd == "run":
         cmd_run(args.spec)
@@ -331,6 +346,31 @@ def main():
         serve(args.port)
     elif args.cmd == "regenerate":
         cmd_regenerate(args.subject, args.run_id)
+    elif args.cmd == "distill":
+        from artcreate.distill import run_distill
+        stats = run_distill(min_count=args.min_count, use_llm=not args.no_llm)
+        print(f"蒸馏完成：采样 {stats['harvested']} · LLM 判定 {stats['judged']}"
+              f" · 新提案 {stats['new_proposals']}")
+        for text, why in stats["skipped"].items():
+            print(f"  跳过「{text[:30]}」：{why}")
+    elif args.cmd == "proposals":
+        from artcreate.distill import list_proposals
+        rows = list_proposals(args.status)
+        if not rows:
+            print("（无提案）")
+        for p in rows:
+            print(f"#{p['id']} [{p['status']}] {p['axis_id']} ← "
+                  f"“{p['sample_text'][:30]}” ×{p['count']}"
+                  f"（置信 {p['confidence']}）")
+    elif args.cmd == "promote":
+        from artcreate.distill import approve
+        r = approve(args.pid)
+        print(f"已晋升 → {r['derived']}"
+              + (f"（git {r['git_commit']}）" if r.get("git_commit") else "（无 git 提交）"))
+    elif args.cmd == "demote":
+        from artcreate.distill import undo
+        r = undo(args.pid)
+        print(f"已撤销晋升" + (f"（git {r['git_commit']}）" if r.get("git_commit") else ""))
 
 
 if __name__ == "__main__":
