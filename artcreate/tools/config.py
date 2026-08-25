@@ -7,6 +7,13 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent.parent  # tools/ → artcreate包/ → 仓库根
 PROJECT_YAML = ROOT / "project.yaml"
 
+# .env 尽早加载（任何入口 import artcreate 即生效）
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+except ImportError:
+    pass
+
 
 class Config:
     """加载一次，全局只读。属性直查，不做花哨封装。"""

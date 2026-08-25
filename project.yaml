@@ -144,3 +144,28 @@ llm:
     model: glm-4v-flash
     api_key_env: ZHIPU_API_KEY
     base_url: "https://open.bigmodel.cn/api/paas/v4/"
+
+# ---------- 机械门禁阈值（阶段3；按画风可覆盖） ----------
+# 校准说明：初版按实测基线放宽（像素化后实测 1400-2600 色 / 网格规则度 0.75-0.94），
+# 先建立统计基线，再逐步收紧到像素画理想值（64 色 / 0.98）。
+gates:
+  mechanical:
+    palette:
+      max_colors: 64            # 主色数 N
+      coverage_ratio: 0.50      # top-64 色覆盖像素比例下限
+      # 校准记录：真实像素画理想 ≥90%；当前出图实测 54-70%（后处理未做调色板量化，
+      # 渐变噪声色多）。阈值先定 50% 保证流水（拦极端跑偏），待 postprocess 增加
+      # palette quantize 步骤后收紧到 90。
+      quantize_level: 6         # 颜色量化位深（每通道 2^n）
+    grid:
+      max_deviation: 0.30       # 规则度 ≥0.70（实测 0.75-0.94；理想 0.02 偏差）
+    alpha:
+      require_clean: true       # 边缘透明必须干净（半透明像素占比上限）
+      edge_semi_alpha_max: 0.05
+    size:
+      exact_match: true         # 输出尺寸必须与 spec 声明一致
+  # 按画风覆盖示例：occult_card 手绘风放宽调色板
+  by_style:
+    occult_card:
+      palette:
+        max_colors: 4096

@@ -157,6 +157,110 @@ def cmd_list(subject=None, status=None):
               f" {r['status']:10} {r['reject_code'] or '-':16} {r['file']}")
 
 
+def cmd_gate(subject: str, run_id: str = None):
+    import artcreate.store as store
+    from artcreate.gates.mechanical import gate_image
+    cfg = get_config()
+    if not run_id:
+        row = store.latest_run(subject)
+        if not row:
+            print(f"subject {subject} 无任何 run")
+            return
+        run_id = row["run_id"]
+    run = store.db().execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
+    if not run:
+        print(f"run {run_id} 不在库中")
+        return
+    art_style = json.loads(run["spec"]).get("art_style", cfg.defaults["art_style"])
+    print(f"=== 机械门禁 run={run_id}（画风 {art_style}）===")
+    rows = [r for r in store.list_candidates(subject=subject) if r["run_id"] == run_id]
+    for r in rows:
+        if r["status"] in ("accepted", "rejected"):
+            print(f"  #{r['idx']} 跳过（已 {r['status']}）")
+            continue
+        img = cfg.root / "exports" / subject / run_id / r["file"]
+        report = gate_image(img, run["size"], art_style)
+        passed = report["pass"]
+        store.set_status(run_id, r["idx"], "gated" if passed else "rejected",
+                         reject_code=report["reject_code"], gate_report=report)
+        mark = "PASS" if passed else f"FAIL({report['reject_code']})"
+        print(f"  #{r['idx']}: {mark}")
+        for c in report["checks"]:
+            if not c["pass"] or True:
+                print(f"      {c['name']}: {'ok' if c['pass'] else 'FAIL'} — {c['detail']}")
+    print("门禁报告已落库（gate 命令完成）")
+
+
+def cmd_diagnose(subject: str, run_id: str = None, idx: int = None):
+    """L2 编译自检 + L3 意图回查组合诊断（D18：诊断必须带一键修复建议）。"""
+    import artcreate.store as store
+    from artcreate.gates.audit import audit_compilation, audit_intent
+    cfg = get_config()
+    if not run_id:
+        row = store.latest_run(subject)
+        if not row:
+            print(f"subject {subject} 无任何 run")
+            return
+        run_id = row["run_id"]
+    run = store.db().execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
+    if not run:
+        print(f"run {run_id} 不在库中")
+        return
+    spec = json.loads(run["spec"])
+
+    print(f"=== L2 编译自检（run={run_id}）===")
+    l2 = audit_compilation(spec, run["prompt"])
+    if l2["verdict"] == "pass":
+        print("  通过：编译产物忠实覆盖全部表单项，无越权内容")
+    else:
+        print(f"  verdict: {l2['verdict']}")
+        for item in l2["coverage"]:
+            print(f"  ⚠️ 未覆盖/误译：{item}")
+            print("     修复：检查编译器对该字段的处理，或改写该项表述后重编译")
+        for item in l2["intrusion"]:
+            print(f"  ⚠️ 越权引入：{item}")
+            print("     修复：这是 LLM 扩展词带入的，考虑加约束轴排除或收紧描述")
+
+    if idx is None:
+        print("\n（指定候选序号可继续 L3 意图回查：diagnose subject run_id <序号>）")
+        return
+
+    print(f"\n=== L3 意图回查（候选 #{idx}）===")
+    row = store.db().execute(
+        "SELECT file FROM candidates WHERE run_id=? AND idx=?",
+        (run_id, idx)).fetchone()
+    if not row:
+        print(f"候选 #{idx} 不存在")
+        return
+    img = cfg.root / "exports" / subject / run_id / row["file"]
+    l3 = audit_intent(img, spec)
+    for r in l3["results"]:
+        if r["ok"] is None:
+            print(f"  ? {r['source']}: 查询失败（{r['answer'][:40]}）")
+        elif r["ok"]:
+            print(f"  ✓ {r['source']}")
+        else:
+            print(f"  ✗ {r['source']} — 违反：{r['question']}")
+            print(f"    回答：{r['answer']}")
+    if l3["violation_rate"] is not None:
+        rate = l3["violation_rate"]
+        print(f"\n  违反率：{rate:.0%}")
+        if rate >= 0.5:
+            print("  ⛔ 高违反率。大概率原因：负向注入或编译丢失。")
+            print("     修复：①检查约束写法（改用约束轴/正向表述，L1 lint 会拦否定式）")
+            print("          ②L2 的 coverage 结果对照是否有约束被编译丢失")
+        elif rate > 0:
+            print("  ⚠️ 部分违反。可对比其他候选或再生成一批。")
+        else:
+            print("  ✓ 全部约束满足。")
+    # 诊断结果落库
+    store.db().execute(
+        "UPDATE candidates SET gate_report=?" 
+        " WHERE run_id=? AND idx=?",
+        (json.dumps({"l2": l2, "l3": l3}, ensure_ascii=False), run_id, idx))
+    store.db().commit()
+
+
 def cmd_select(subject: str, run_id: str = None, idx: int = None):
     """挑选候选入库。缺省 run_id 取该 subject 最新 run；缺省 idx 需显式给出。"""
     import artcreate.store as store
@@ -208,6 +312,18 @@ def main():
     p.add_argument("idx", type=int)
     p.add_argument("--code", default="manual")
 
+    p = sub.add_parser("gate")
+    p.add_argument("subject")
+    p.add_argument("run_id", nargs="?", default=None)
+
+    p = sub.add_parser("diagnose")
+    p.add_argument("subject")
+    p.add_argument("run_id", nargs="?", default=None)
+    p.add_argument("idx", nargs="?", type=int, default=None)
+
+    p = sub.add_parser("stats")
+    p.add_argument("--subject", "-s", default=None)
+
     args = ap.parse_args()
     if args.cmd == "run":
         cmd_run(args.spec)
@@ -221,6 +337,13 @@ def main():
         cmd_select(args.subject, args.run_id, args.idx)
     elif args.cmd == "reject":
         cmd_reject(args.subject, args.run_id, args.idx, args.code)
+    elif args.cmd == "gate":
+        cmd_gate(args.subject, args.run_id)
+    elif args.cmd == "diagnose":
+        cmd_diagnose(args.subject, args.run_id, args.idx)
+    elif args.cmd == "stats":
+        from artcreate.gates.stats import format_stats
+        print(format_stats(args.subject))
 
 
 if __name__ == "__main__":
