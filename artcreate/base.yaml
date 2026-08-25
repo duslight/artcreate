@@ -1,0 +1,110 @@
+# base.yaml — 工具出厂默认字典（随代码同版本，请勿在项目里直接改）
+# 配置加载链（D22）：base.yaml（本文件） → project.yaml（项目定制） → derived/*.yaml（经验晋升）
+# 深合并语义：
+#   dict 按键递归合并（后层覆盖同键标量）
+#   list 元素若全为含 id 的 dict → 按 id 深合并（同 id 递归合并，新 id 追加）
+#   其余 list / 类型不匹配 → 后层整体替换
+# 项目要改字典：写 project.yaml 同名段覆盖；经验晋升：由 distill 写 derived/axes_evolved.yaml
+
+# ---------- 分辨率档位（Seedream 4.5 实测约束：总像素 [369万,1677万]，宽高比 [1:16,16:1]） ----------
+sizes:
+  "4032x1728": { group: 横, label: "超宽 · 电影感横幅" }
+  "3840x2160": { group: 横, label: "宽屏 · 网页/视频通用" }
+  "2688x1792": { group: 横, label: "经典横 · 通用场景" }
+  "3200x2400": { group: 横, label: "端正横 · 室内/物件陈列" }
+  "2688x2688": { group: 方, label: "方形 · 图标底/卡背" }
+  "1792x2688": { group: 竖, label: "经典竖 · 卡片立绘" }
+  "2304x4096": { group: 竖, label: "长竖 · 手机全屏" }
+  "1920x3840": { group: 竖, label: "长条竖 · 旗帜/公告板" }
+
+# ---------- 画风预设（白名单制：整尾块按画风切换，防条款自相矛盾 D13） ----------
+art_styles:
+  pixel_classic:
+    label: "经典像素（Dead Cells / Blasphemous）"
+    compiler_hint: "dense pixel-art scene"
+    suffix: "Deep muted palette, crisp dark outlines, high pixel density, layered dithering, detailed pixel rendering, no text, no watermark, in the style of Dead Cells and Blasphemous environmental art"
+  occult_card:
+    label: "密教模拟器（暗色手绘神秘卡牌）"
+    compiler_hint: "dark occult hand-drawn illustration"
+    suffix: "Dark muted palette, hand-drawn occult illustration, ink and gouache textures, esoteric symbolism, aged parchment tones, fine crosshatching, ornate borders, no text, no watermark, in the style of Cultist Simulator card art"
+
+# ---------- 资产类型 → 媒介声明前缀（按构图本质分类 D16） ----------
+asset_types:
+  environment_wide:
+    label: "场景全景"
+    desc: "完整空间纵深，人视角站在场景中"
+    prefix: "Pixel art atmospheric scene with deep spatial perspective"
+  backdrop:
+    label: "背景底图"
+    desc: "平缓构图弱纵深，留负空间供 UI 叠加"
+    prefix: "Pixel art backdrop illustration, flat composition with generous negative space"
+  prop:
+    label: "单体物件"
+    desc: "居中特写，单一主体，无环境叙事"
+    prefix: "Pixel art single prop illustration, centered subject on plain ground"
+  card_art:
+    label: "卡面插画"
+    desc: "竖构图，主体焦点，自带边框感"
+    prefix: "Pixel art vertical card illustration with framed border feel"
+  texture:
+    label: "纹理图案"
+    desc: "可平铺材质表面（木纹/石面/织物）"
+    prefix: "Pixel art seamless tileable texture pattern"
+
+# ---------- 氛围原型 → 光影氛围注入词（每条 = 单一光源概念 + 可执行物理描述） ----------
+moods:
+  none:            { label: "不指定",   inject: "" }
+  light_divide:    { label: "光影分界", inject: "a sharp diagonal light/shadow divide cutting across the scene, one warm light source versus cold ambient light" }
+  moon_patches:    { label: "月斑与雾", inject: "thin moonbeams breaking through, dappled pale light patches, drifting mist" }
+  confined_glow:   { label: "困缩光池", inject: "a small pool of warm light ending in a hard edge, surroundings sinking into deep darkness" }
+  void_burst:      { label: "破暗光涌", inject: "a burst of warm golden light from one corner, darkness receding with cracked shadows" }
+  candle_flicker:  { label: "烛光摇曳", inject: "flickering candlelight, dancing unsteady shadows, warmth barely holding back the dark" }
+  fog_veil:        { label: "雾锁迷城", inject: "thick fog swallowing distant forms, diffused pale light, silhouettes fading into haze" }
+  drowned_light:   { label: "沉水微光", inject: "light filtering down through deep water, rippling caustics, suspended drift" }
+  twilight_lament: { label: "暮色将尽", inject: "last dying light of dusk, long stretched shadows, sky bleeding into darkness" }
+  eldritch_glow:   { label: "魇祟辉光", inject: "sickly unnatural glow from an unseen source, green-teal luminescence, shadows bending wrong" }
+  hallowed_rays:   { label: "圣眷垂光", inject: "volumetric god rays descending from above, dust motes in sacred light, reverent stillness" }
+  radiant_day:     { label: "明媚天光", inject: "bright clear daylight, clean vivid colors, soft scattered clouds, gentle breeze in the air" }
+  pitch_dark:      { label: "极暗深黢", inject: "near-total darkness, faint cool outlines barely visible, a single distant pinprick of light" }
+
+# ---------- 约束合集（语义轴 D12：用户选意图，系统展开预写英文词组，不依赖 LLM） ----------
+# 字典 schema v2 迁移目标（阶段 3.5-B/C）：
+#   轴选项将增加 verify_question（L3 意图回查问句）、source（base/manual/distilled）、
+#   confidence（distill 置信度）；画风将增加 conflict_words（L1 画风冲突词）。
+constraint_axes:
+  - id: human_trace
+    label: "人工痕迹"
+    options:
+      - { id: any,      label: "不限" }
+      - { id: natural,  label: "完全自然",
+          negative: [bridges, roads, buildings, fences, farmland, ships, machinery],
+          positive: [pristine untouched wilderness] }
+      - { id: present,  label: "有人工痕迹",
+          positive: [weathered man-made structures, worn stone paths] }
+  - id: water
+    label: "水体"
+    options:
+      - { id: any,      label: "不限" }
+      - { id: none,     label: "无水体",
+          negative: [rivers, streams, lakes, ponds, waterfalls, "flooded water", puddles] }
+      - { id: present,  label: "有水体",
+          positive: [a water feature woven into the terrain] }
+  - id: enclosure
+    label: "空间"
+    options:
+      - { id: any,      label: "不限" }
+      - { id: open,     label: "开阔",
+          negative: [interior walls, ceilings, "door frames", cave tunnels],
+          positive: [vast open sky, wide horizon] }
+      - { id: enclosed, label: "密闭",
+          negative: [open sky, vast horizons, distant landscapes],
+          positive: [claustrophobic enclosed space, low ceilings pressing down] }
+  - id: vegetation
+    label: "植被"
+    options:
+      - { id: any,      label: "不限" }
+      - { id: barren,   label: "荒芜",
+          negative: [lush vegetation, forests, "thick foliage", "flowering plants", "mossy growth"],
+          positive: [bare barren ground, "dead twisted branches"] }
+      - { id: lush,     label: "繁茂",
+          positive: [dense overgrown vegetation, plants reclaiming the space] }

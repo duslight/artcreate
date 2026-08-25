@@ -13,8 +13,9 @@ from ..tools.config import get_config
 
 def _thresholds(art_style: str) -> dict:
     cfg = get_config()
-    base = dict(cfg._raw["gates"]["mechanical"])
-    override = cfg._raw["gates"].get("by_style", {}).get(art_style)
+    gates = cfg.gates
+    base = dict(gates["mechanical"])
+    override = gates.get("by_style", {}).get(art_style)
     if override:
         for k, v in override.items():
             base.setdefault(k, {}).update(v)
