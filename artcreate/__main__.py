@@ -133,10 +133,56 @@ def cmd_run(spec_path: str):
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
 
+    # 5. 注册进资产库（阶段2）
+    import artcreate.store as store
+    store.register_run(manifest)
+
     print(f"\n=== 完成 ===")
     print(f"资产目录：{out_dir}")
     print(f"manifest：{manifest_path}")
+    print(f"库注册：{len(post_meta)} 候选（run_id={run_id}）")
+    print(f"挑选入库：python -m artcreate select {subject} {run_id} <序号>")
     return manifest
+
+
+def cmd_list(subject=None, status=None):
+    import artcreate.store as store
+    rows = store.list_candidates(subject=subject, status=status)
+    if not rows:
+        print("（无记录）")
+        return
+    print(f"{'run_id':28} {'idx':>3} {'subject':20} {'rev':>3} {'status':10} {'reject':16} file")
+    for r in rows:
+        print(f"{r['run_id']:28} {r['idx']:>3} {r['subject']:20} {r['revision']:>3}"
+              f" {r['status']:10} {r['reject_code'] or '-':16} {r['file']}")
+
+
+def cmd_select(subject: str, run_id: str = None, idx: int = None):
+    """挑选候选入库。缺省 run_id 取该 subject 最新 run；缺省 idx 需显式给出。"""
+    import artcreate.store as store
+    if not run_id:
+        row = store.latest_run(subject)
+        if not row:
+            print(f"subject {subject} 无任何 run")
+            return
+        run_id = row["run_id"]
+    if idx is None:
+        # 展示该 run 的候选供挑选
+        rows = store.list_candidates(subject=subject)
+        rows = [r for r in rows if r["run_id"] == run_id]
+        print(f"run {run_id} 候选（用 select {subject} {run_id} <序号> 挑选）：")
+        for r in rows:
+            print(f"  #{r['idx']}  {r['file']}  [{r['status']}]")
+        return
+    store.accept(run_id, idx)
+    print(f"已接受：{subject} run={run_id} 候选#{idx}"
+          f"（同 subject 同 revision 旧 accepted 已自动降级）")
+
+
+def cmd_reject(subject: str, run_id: str, idx: int, code: str = "manual"):
+    import artcreate.store as store
+    store.reject(run_id, idx, code)
+    print(f"已拒绝：{subject} run={run_id} 候选#{idx}（拒绝码 {code}）")
 
 
 def main():
@@ -145,13 +191,36 @@ def main():
     for name in ("run", "compile", "lint"):
         p = sub.add_parser(name)
         p.add_argument("spec", help="spec yaml 路径")
+
+    p = sub.add_parser("list")
+    p.add_argument("--subject", "-s", default=None)
+    p.add_argument("--status", "-t", default=None,
+                   choices=["generated", "gated", "accepted", "rejected"])
+
+    p = sub.add_parser("select")
+    p.add_argument("subject")
+    p.add_argument("run_id", nargs="?", default=None)
+    p.add_argument("idx", nargs="?", type=int, default=None)
+
+    p = sub.add_parser("reject")
+    p.add_argument("subject")
+    p.add_argument("run_id")
+    p.add_argument("idx", type=int)
+    p.add_argument("--code", default="manual")
+
     args = ap.parse_args()
     if args.cmd == "run":
         cmd_run(args.spec)
     elif args.cmd == "compile":
         cmd_compile(args.spec)
-    else:
+    elif args.cmd == "lint":
         cmd_lint(args.spec)
+    elif args.cmd == "list":
+        cmd_list(args.subject, args.status)
+    elif args.cmd == "select":
+        cmd_select(args.subject, args.run_id, args.idx)
+    elif args.cmd == "reject":
+        cmd_reject(args.subject, args.run_id, args.idx, args.code)
 
 
 if __name__ == "__main__":
