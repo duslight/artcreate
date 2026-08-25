@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# 密钥与环境
+.env
+.env.local
+*.key
+
+# 生成产物与资产库（大文件不入库，走资产注册表/外部存储）
+output/
+raw_images/
+static/images/
+exports/
+*.png
+*.jpg
+*.jpeg
+*.webp
+# 例外：文档与知识文件中确需入库的示意图放 docs/assets/
+!docs/assets/**
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
