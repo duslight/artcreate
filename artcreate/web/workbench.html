@@ -22,6 +22,10 @@
     width:100%; background:#191b1e; color:var(--txt); border:1px solid var(--line);
     border-radius:6px; padding:8px 10px; font-size:14px; }
   textarea { resize:vertical; min-height:56px; }
+  .desc { background:#191b1e; border-left:2px solid var(--acc); border-radius:0 6px 6px 0;
+          padding:6px 10px; font-size:12px; color:var(--dim); margin-top:4px;
+          min-height:1em; display:none; }
+  .desc.show { display:block; }
   .row { display:flex; gap:10px; flex-wrap:wrap; }
   .row > div { flex:1; min-width:140px; }
   .axis { margin-top:8px; }
@@ -72,11 +76,11 @@
     <div><label>描述（中文一句话）</label><input type="text" id="f-desc" placeholder="例：森林深处一座废弃石祠，晨雾缭绕"></div>
   </div>
   <div class="row">
-    <div><label>资产类型</label><select id="f-atype"></select></div>
-    <div><label>画风</label><select id="f-style"></select></div>
+    <div><label>资产类型</label><select id="f-atype" onchange="showDesc(this)"></select><div class="desc" id="desc-f-atype"></div></div>
+    <div><label>画风</label><select id="f-style" onchange="showDesc(this)"></select><div class="desc" id="desc-f-style"></div></div>
   </div>
   <div class="row">
-    <div><label>氛围</label><select id="f-mood"></select></div>
+    <div><label>氛围</label><select id="f-mood" onchange="showDesc(this)"></select><div class="desc" id="desc-f-mood"></div></div>
     <div><label>尺寸</label><select id="f-size"></select></div>
     <div><label>数量</label><select id="f-count"></select></div>
   </div>
@@ -209,8 +213,18 @@ async function runDistill() {
 }
 
 // ---- 表单 ----
+const DICT_STORE = {};   // id -> {desc}，供 showDesc 查询
+function showDesc(sel) {
+  const box = document.getElementById('desc-' + sel.id);
+  const info = (DICT_STORE[sel.id] || {})[sel.value] || {};
+  if (info.desc) { box.textContent = info.desc; box.classList.add('show'); }
+  else { box.classList.remove('show'); }
+}
 async function loadDict() {
   DICT = await (await fetch('/api/form/dict', {headers: H()})).json();
+  DICT_STORE['f-atype'] = DICT.asset_types;
+  DICT_STORE['f-style'] = DICT.art_styles;
+  DICT_STORE['f-mood'] = DICT.moods;
   fill('f-atype', DICT.asset_types, 'label');
   fill('f-style', DICT.art_styles, 'label');
   fill('f-mood', DICT.moods, 'label');
@@ -235,6 +249,9 @@ async function loadDict() {
   document.getElementById('f-style').value = DICT.defaults.art_style;
   document.getElementById('f-mood').value = DICT.defaults.mood;
   document.getElementById('f-size').value = DICT.defaults.size;
+  // 默认项 desc 立即显示
+  ['f-atype', 'f-style', 'f-mood'].forEach(id =>
+    showDesc(document.getElementById(id)));
 }
 function fill(id, dict, labelf) {
   const el = document.getElementById(id);

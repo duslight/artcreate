@@ -43,13 +43,16 @@ def _actor(x_actor_id: str = None, x_actor_name: str = None) -> dict:
 # ---------- 表单字典 ----------
 @router.get("/api/form/dict")
 def form_dict(request: Request, x_token: str = Header(None)):
-    """工作台表单渲染所需全部字典 + 默认值 + 溯源。"""
+    """工作台表单渲染所需全部字典 + 默认值 + 溯源。
+    ui_hidden 条目不返回（表单精简；编译兼容由后端 spec 校验兜底）。"""
     _check_token(request, x_token)
     src_map = cfg.axis_source_map()
     axes = []
     for ax in cfg.constraint_axes:
         opts = []
         for o in ax.get("options", []):
+            if o.get("ui_hidden"):
+                continue
             item = dict(o)
             item["source"] = src_map.get((ax["id"], o.get("id")), "base")
             opts.append(item)
@@ -59,9 +62,12 @@ def form_dict(request: Request, x_token: str = Header(None)):
     return {
         "defaults": cfg.defaults,
         "sizes": cfg.sizes,
-        "art_styles": cfg.art_styles,
-        "asset_types": cfg.asset_types,
-        "moods": cfg.moods,
+        "art_styles": {k: v for k, v in cfg.art_styles.items()
+                       if not v.get("ui_hidden")},
+        "asset_types": {k: v for k, v in cfg.asset_types.items()
+                        if not v.get("ui_hidden")},
+        "moods": {k: v for k, v in cfg.moods.items()
+                  if not v.get("ui_hidden")},
         "constraint_axes": axes,
     }
 

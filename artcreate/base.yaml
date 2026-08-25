@@ -19,15 +19,18 @@ sizes:
 
 # ---------- 画风预设（白名单制：整尾块按画风切换，防条款自相矛盾 D13） ----------
 # conflict_words：与该画风互斥的渲染词（L1 画风冲突检查数据源，schema v2）
+# desc：表单展示的一句人话解释（无美术背景的策划可读懂）
 art_styles:
   pixel_classic:
     label: "经典像素（Dead Cells / Blasphemous）"
+    desc: "高密度像素风，参考《死亡细胞》《渎神》：深色调、清晰描边、抖动渐变。适合大部分场景资产"
     compiler_hint: "dense pixel-art scene"
     suffix: "Deep muted palette, crisp dark outlines, high pixel density, layered dithering, detailed pixel rendering, no text, no watermark, in the style of Dead Cells and Blasphemous environmental art"
     conflict_words: ["手绘", "水墨", "水彩", "油画", "厚涂", "铅笔画",
                      "photorealistic", "hand-drawn", "ink wash", "watercolor", "oil painting"]
   occult_card:
     label: "密教模拟器（暗色手绘神秘卡牌）"
+    desc: "暗色手绘卡牌风，参考《密教模拟器》：墨水+水彩质感、神秘符号、羊皮纸底色。适合卡面/UI 装饰"
     compiler_hint: "dark occult hand-drawn illustration"
     suffix: "Dark muted palette, hand-drawn occult illustration, ink and gouache textures, esoteric symbolism, aged parchment tones, fine crosshatching, ornate borders, no text, no watermark, in the style of Cultist Simulator card art"
     conflict_words: ["像素", "pixel art", "pixel-art", "像素画"]
@@ -56,20 +59,38 @@ asset_types:
     prefix: "Pixel art seamless tileable texture pattern"
 
 # ---------- 氛围原型 → 光影氛围注入词（每条 = 单一光源概念 + 可执行物理描述） ----------
+# desc：光照作用的完整解释（表单选中即显示，解决"简写看不懂"）
+# ui_hidden: true：表单不再显示但编译仍兼容（旧 spec 引用不报错）
+# 2026-08-25 精简 13→9：月斑与雾并入雾锁迷城、破暗光涌并入光影分界/困缩光池、
+# 沉水微光/暮色将尽题材过窄转 ui_hidden
 moods:
-  none:            { label: "不指定",   inject: "" }
-  light_divide:    { label: "光影分界", inject: "a sharp diagonal light/shadow divide cutting across the scene, one warm light source versus cold ambient light" }
-  moon_patches:    { label: "月斑与雾", inject: "thin moonbeams breaking through, dappled pale light patches, drifting mist" }
-  confined_glow:   { label: "困缩光池", inject: "a small pool of warm light ending in a hard edge, surroundings sinking into deep darkness" }
-  void_burst:      { label: "破暗光涌", inject: "a burst of warm golden light from one corner, darkness receding with cracked shadows" }
-  candle_flicker:  { label: "烛光摇曳", inject: "flickering candlelight, dancing unsteady shadows, warmth barely holding back the dark" }
-  fog_veil:        { label: "雾锁迷城", inject: "thick fog swallowing distant forms, diffused pale light, silhouettes fading into haze" }
-  drowned_light:   { label: "沉水微光", inject: "light filtering down through deep water, rippling caustics, suspended drift" }
-  twilight_lament: { label: "暮色将尽", inject: "last dying light of dusk, long stretched shadows, sky bleeding into darkness" }
-  eldritch_glow:   { label: "魇祟辉光", inject: "sickly unnatural glow from an unseen source, green-teal luminescence, shadows bending wrong" }
-  hallowed_rays:   { label: "圣眷垂光", inject: "volumetric god rays descending from above, dust motes in sacred light, reverent stillness" }
-  radiant_day:     { label: "明媚天光", inject: "bright clear daylight, clean vivid colors, soft scattered clouds, gentle breeze in the air" }
-  pitch_dark:      { label: "极暗深黢", inject: "near-total darkness, faint cool outlines barely visible, a single distant pinprick of light" }
+  none:            { label: "不指定", inject: "",
+                     desc: "光照交给模型自由发挥，适合无明确氛围要求的物件/纹理" }
+  light_divide:    { label: "光影分界", inject: "a sharp diagonal light/shadow divide cutting across the scene, one warm light source versus cold ambient light",
+                     desc: "画面被一道斜切线分成明暗两半：一侧暖光源、一侧冷环境光。戏剧张力最强，适合对峙/冲突感场景" }
+  confined_glow:   { label: "困缩光池", inject: "a small pool of warm light ending in a hard edge, surroundings sinking into deep darkness",
+                     desc: "一小片暖光被黑暗包围，边界生硬。篝火/烛光/洞窟感，强调安全区之小与危险之近" }
+  candle_flicker:  { label: "烛光摇曳", inject: "flickering candlelight, dancing unsteady shadows, warmth barely holding back the dark",
+                     desc: "不稳定的光源，影子随火苗晃动。室内/祭祀/幽闭感，暖光勉强抵御黑暗" }
+  fog_veil:        { label: "雾锁迷城", inject: "thick fog swallowing distant forms, diffused pale light, silhouettes fading into haze",
+                     desc: "浓雾吞掉远处形体，光被雾漫射成灰白。远景/神秘/迷失感，也覆盖月斑光柱类效果" }
+  eldritch_glow:   { label: "魇祟辉光", inject: "sickly unnatural glow from an unseen source, green-teal luminescence, shadows bending wrong",
+                     desc: "来源不明的病态辉光（青绿色），影子朝错误方向弯。克苏鲁/污染/异常感" }
+  hallowed_rays:   { label: "圣眷垂光", inject: "volumetric god rays descending from above, dust motes in sacred light, reverent stillness",
+                     desc: "从上方垂落的体积光柱，尘埃在光中漂浮。神殿/圣所/庄严感" }
+  radiant_day:     { label: "明媚天光", inject: "bright clear daylight, clean vivid colors, soft scattered clouds, gentle breeze in the air",
+                     desc: "明亮清澈的日光，色彩干净鲜艳。明快/日常/村庄感，与全部暗色氛围对立" }
+  pitch_dark:      { label: "极暗深黢", inject: "near-total darkness, faint cool outlines barely visible, a single distant pinprick of light",
+                     desc: "近乎全黑，只留冷色轮廓与远处一点微光。恐惧/深渊/最低可见度" }
+  # ---- ui_hidden（编译兼容，表单不显示） ----
+  moon_patches:    { label: "月斑与雾", inject: "thin moonbeams breaking through, dappled pale light patches, drifting mist", ui_hidden: true,
+                     desc: "（已并入雾锁迷城）" }
+  void_burst:      { label: "破暗光涌", inject: "a burst of warm golden light from one corner, darkness receding with cracked shadows", ui_hidden: true,
+                     desc: "（并入光影分界/困缩光池）" }
+  drowned_light:   { label: "沉水微光", inject: "light filtering down through deep water, rippling caustics, suspended drift", ui_hidden: true,
+                     desc: "（题材过窄，需要时用自由约束写）" }
+  twilight_lament: { label: "暮色将尽", inject: "last dying light of dusk, long stretched shadows, sky bleeding into darkness", ui_hidden: true,
+                     desc: "（题材过窄，需要时用自由约束写）" }
 
 # ---------- 约束合集（语义轴 D12：用户选意图，系统展开预写英文词组，不依赖 LLM） ----------
 # 字典 schema v2：
