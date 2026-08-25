@@ -19,8 +19,9 @@ def download(url: str, dest: Path):
         f.write(r.read())
 
 
-def pixelate(src_path: Path, dst_path: Path):
-    """网格检测 → INTER_AREA 缩到网格 → NEAREST 放大回原尺寸（VibeGame pixel_clean 复刻）"""
+def pixelate(src_path: Path, dst_path: Path, thumb_size: int = 512):
+    """网格检测 → INTER_AREA 缩到网格 → NEAREST 放大回原尺寸（VibeGame pixel_clean 复刻）
+    同时产出 thumb_N.jpg 缩略图（定稿全保+候选缩略的存储策略：日志/时间线只吃缩略图）"""
     img = cv2.imread(str(src_path), cv2.IMREAD_UNCHANGED)
     if img is None:
         raise ValueError(f"无法读取图像: {src_path}")
@@ -32,6 +33,17 @@ def pixelate(src_path: Path, dst_path: Path):
     small = cv2.resize(img, (gw, gh), interpolation=cv2.INTER_AREA)
     out = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
     cv2.imwrite(str(dst_path), out)
+
+    # 缩略图：长边压到 thumb_size，质量 82（约 30-100KB，够时间线预览）
+    scale = thumb_size / max(w, h)
+    if scale < 1:
+        thumb = cv2.resize(out, (int(w * scale), int(h * scale)),
+                           interpolation=cv2.INTER_AREA)
+    else:
+        thumb = out
+    thumb_path = dst_path.parent / dst_path.name.replace(".png", ".jpg")
+    cv2.imwrite(str(thumb_path), thumb[:, :, :3],
+                [cv2.IMWRITE_JPEG_QUALITY, 82])
     return {"w": w, "h": h, "grid_w": gw, "grid_h": gh}
 
 
