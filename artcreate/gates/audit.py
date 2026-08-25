@@ -87,26 +87,22 @@ def audit_compilation(spec: dict, compiled_prompt: str,
 
 def _build_intent_questions(spec: dict):
     """从 spec 原始意图构造验图问题（中文问 VLM，回答 yes/no 可统计）。
-    只取'可视觉判定'的约束：约束轴 + 自由文本；描述主体作为辅助问题。"""
+    问句来自轴选项 verify_question（schema v2 元数据驱动，新轴/晋升选项免改代码）；
+    自由文本与描述主体作为辅助问题。"""
     cfg = get_config()
     questions = []
     axis_sel = (spec.get("constraints") or {}).get("axis_sel", {}) or {}
 
-    axis_q = {
-        "human_trace": {"natural": "画面中是否完全没有人工建筑/道路/桥梁等人造物？",
-                         "present": "画面中是否有人工痕迹（建筑/道路/桥梁等）？"},
-        "water": {"none": "画面中是否完全没有河流/湖泊/水塘等水体？",
-                  "present": "画面中是否有水体（河流/湖泊/水塘等）？"},
-        "enclosure": {"open": "画面是否是开阔场景（能看到天空/地平线）？",
-                      "enclosed": "画面是否是封闭室内/洞穴场景（看不到开阔天空）？"},
-        "vegetation": {"barren": "画面是否几乎没有植被（荒芜地表）？",
-                       "lush": "画面是否有茂密植被？"},
-    }
-    for axis_id, opts in axis_q.items():
-        sel = axis_sel.get(axis_id)
-        if sel and sel in opts:
+    axes = {a["id"]: a for a in cfg.constraint_axes}
+    for axis_id, sel in axis_sel.items():
+        axis = axes.get(axis_id)
+        if not axis or axis.get("non_promotable"):
+            continue
+        opt = next((o for o in axis.get("options", []) if o.get("id") == sel), None)
+        q = (opt or {}).get("verify_question")
+        if q:
             questions.append({"source": f"axis:{axis_id}={sel}",
-                              "question": opts[sel],
+                              "question": q,
                               "expect": "yes"})
 
     free_text = str((spec.get("constraints") or {}).get("free_text") or "").strip()

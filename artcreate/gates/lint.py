@@ -16,13 +16,6 @@ NEGATION_PATTERNS = [
     (re.compile(r"\b(no|without|never|avoid)\s+[\w-]+", re.I), "en"),
 ]
 
-# 画风核心渲染词（与 project.yaml art_styles 的 suffix 对应维护）
-STYLE_RENDER_WORDS = {
-    "pixel": ["手绘", "水墨", "水彩", "油画", "厚涂", "铅笔画", "photorealistic",
-              "hand-drawn", "ink wash", "watercolor", "oil painting"],
-    "occult_card": ["像素", "pixel art", "pixel-art", "像素画"],
-}
-
 # token 估算：英文 ~4 字符/token；Seedream 系上限约 512 token（保守按 480 预警）
 PROMPT_TOKEN_WARN = 480
 
@@ -60,16 +53,16 @@ def lint_spec(spec: dict, compiled_prompt: str = "", art_style: str = ""):
                                f"否定词会被反向激活（粉红大象问题），越说越可能出现",
                     "fix": fix})
 
-    # 3. 画风条款冲突
-    if art_style in STYLE_RENDER_WORDS:
-        conflicts = [w for w in STYLE_RENDER_WORDS[art_style]
-                     if w in desc or w in free_text or w in extra]
-        if conflicts:
-            warnings.append({
-                "level": "warn", "code": "STYLE_CONFLICT",
-                "message": f"输入含与当前画风冲突的词：{'、'.join(conflicts)}"
-                           f"（当前画风尾块与之矛盾，输出会随机倒向一边）",
-                "fix": f"移除冲突词，画风交给画风项统一控制"})
+    # 3. 画风条款冲突（schema v2：冲突词从画风字典 conflict_words 读取）
+    style_conf = cfg.art_styles.get(art_style, {})
+    conflicts = [w for w in style_conf.get("conflict_words", [])
+                 if w in desc or w in free_text or w in extra]
+    if conflicts:
+        warnings.append({
+            "level": "warn", "code": "STYLE_CONFLICT",
+            "message": f"输入含与当前画风冲突的词：{'、'.join(conflicts)}"
+                       f"（当前画风尾块与之矛盾，输出会随机倒向一边）",
+            "fix": f"移除冲突词，画风交给画风项统一控制"})
 
     # 4. token 超限预警
     if compiled_prompt:

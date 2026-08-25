@@ -18,15 +18,19 @@ sizes:
   "1920x3840": { group: 竖, label: "长条竖 · 旗帜/公告板" }
 
 # ---------- 画风预设（白名单制：整尾块按画风切换，防条款自相矛盾 D13） ----------
+# conflict_words：与该画风互斥的渲染词（L1 画风冲突检查数据源，schema v2）
 art_styles:
   pixel_classic:
     label: "经典像素（Dead Cells / Blasphemous）"
     compiler_hint: "dense pixel-art scene"
     suffix: "Deep muted palette, crisp dark outlines, high pixel density, layered dithering, detailed pixel rendering, no text, no watermark, in the style of Dead Cells and Blasphemous environmental art"
+    conflict_words: ["手绘", "水墨", "水彩", "油画", "厚涂", "铅笔画",
+                     "photorealistic", "hand-drawn", "ink wash", "watercolor", "oil painting"]
   occult_card:
     label: "密教模拟器（暗色手绘神秘卡牌）"
     compiler_hint: "dark occult hand-drawn illustration"
     suffix: "Dark muted palette, hand-drawn occult illustration, ink and gouache textures, esoteric symbolism, aged parchment tones, fine crosshatching, ornate borders, no text, no watermark, in the style of Cultist Simulator card art"
+    conflict_words: ["像素", "pixel art", "pixel-art", "像素画"]
 
 # ---------- 资产类型 → 媒介声明前缀（按构图本质分类 D16） ----------
 asset_types:
@@ -68,9 +72,12 @@ moods:
   pitch_dark:      { label: "极暗深黢", inject: "near-total darkness, faint cool outlines barely visible, a single distant pinprick of light" }
 
 # ---------- 约束合集（语义轴 D12：用户选意图，系统展开预写英文词组，不依赖 LLM） ----------
-# 字典 schema v2 迁移目标（阶段 3.5-B/C）：
-#   轴选项将增加 verify_question（L3 意图回查问句）、source（base/manual/distilled）、
-#   confidence（distill 置信度）；画风将增加 conflict_words（L1 画风冲突词）。
+# 字典 schema v2：
+#   轴选项 verify_question：L3 意图回查问句（必须构造为"是否满足约束"形式，
+#     肯定回答=满足，与 audit._parse_yesno 协议对齐）；省略则该选项跳过 L3 验图
+#   source：base（出厂）/ manual（project 手写）/ distilled（经验晋升），distill 写入
+#   confidence：distill 置信度 0-1，仅 distilled 项携带
+#   轴级 non_promotable: true 时整轴禁止晋升（关系约束等无法独立成轴的语义）
 constraint_axes:
   - id: human_trace
     label: "人工痕迹"
@@ -78,33 +85,41 @@ constraint_axes:
       - { id: any,      label: "不限" }
       - { id: natural,  label: "完全自然",
           negative: [bridges, roads, buildings, fences, farmland, ships, machinery],
-          positive: [pristine untouched wilderness] }
+          positive: [pristine untouched wilderness],
+          verify_question: "画面中是否完全没有人工建筑/道路/桥梁等人造物？" }
       - { id: present,  label: "有人工痕迹",
-          positive: [weathered man-made structures, worn stone paths] }
+          positive: [weathered man-made structures, worn stone paths],
+          verify_question: "画面中是否有人工痕迹（建筑/道路/桥梁等）？" }
   - id: water
     label: "水体"
     options:
       - { id: any,      label: "不限" }
       - { id: none,     label: "无水体",
-          negative: [rivers, streams, lakes, ponds, waterfalls, "flooded water", puddles] }
+          negative: [rivers, streams, lakes, ponds, waterfalls, "flooded water", puddles],
+          verify_question: "画面中是否完全没有河流/湖泊/水塘等水体？" }
       - { id: present,  label: "有水体",
-          positive: [a water feature woven into the terrain] }
+          positive: [a water feature woven into the terrain],
+          verify_question: "画面中是否有水体（河流/湖泊/水塘等）？" }
   - id: enclosure
     label: "空间"
     options:
       - { id: any,      label: "不限" }
       - { id: open,     label: "开阔",
           negative: [interior walls, ceilings, "door frames", cave tunnels],
-          positive: [vast open sky, wide horizon] }
+          positive: [vast open sky, wide horizon],
+          verify_question: "画面是否是开阔场景（能看到天空/地平线）？" }
       - { id: enclosed, label: "密闭",
           negative: [open sky, vast horizons, distant landscapes],
-          positive: [claustrophobic enclosed space, low ceilings pressing down] }
+          positive: [claustrophobic enclosed space, low ceilings pressing down],
+          verify_question: "画面是否是封闭室内/洞穴场景（看不到开阔天空）？" }
   - id: vegetation
     label: "植被"
     options:
       - { id: any,      label: "不限" }
       - { id: barren,   label: "荒芜",
           negative: [lush vegetation, forests, "thick foliage", "flowering plants", "mossy growth"],
-          positive: [bare barren ground, "dead twisted branches"] }
+          positive: [bare barren ground, "dead twisted branches"],
+          verify_question: "画面是否几乎没有植被（荒芜地表）？" }
       - { id: lush,     label: "繁茂",
-          positive: [dense overgrown vegetation, plants reclaiming the space] }
+          positive: [dense overgrown vegetation, plants reclaiming the space],
+          verify_question: "画面是否有茂密植被？" }
