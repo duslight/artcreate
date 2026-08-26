@@ -387,12 +387,16 @@ def api_set_anchor(name: str, request: Request, body: dict,
 
 
 # ---------- 风格锚（画风固化：参考图随 spec 直送生图模型） ----------
+STYLE_ANCHOR_MAX = 12   # 锚名数上限（单次生图挂载仍限 3 张防稀释）
+
+
 @router.get("/api/style-anchors")
 def api_list_style_anchors(request: Request, x_token: str = Header(None)):
-    """风格锚库（表单选择器数据源）：每风格名最新一张 + 张数。"""
+    """风格锚库（表单选择器数据源）：每风格名最新一张 + 张数 + 上限。"""
     _check_token(request, x_token)
     from . import character
-    return {"anchors": character.list_style_anchors()}
+    return {"anchors": character.list_style_anchors(),
+            "max": STYLE_ANCHOR_MAX}
 
 
 @router.post("/api/style-anchors/upload")
@@ -401,7 +405,8 @@ async def api_upload_style_anchor(request: Request,
                                   x_actor_id: str = Header(None),
                                   x_actor_name: str = Header(None)):
     """上传本地图建风格锚。multipart/form-data: name, note?, file。
-    任意分辨率（方舟对参考图自行缩放，无需与生图尺寸一致）；png/jpg/webp。"""
+    任意分辨率（方舟对参考图自行缩放，无需与生图尺寸一致）；png/jpg/webp。
+    同名追加（演进史保留）；新名受上限守卫。"""
     _check_token(request, x_token)
     from . import character
     form = await request.form()
@@ -414,6 +419,11 @@ async def api_upload_style_anchor(request: Request,
     suffix = Path(upload.filename).suffix.lower()
     if suffix not in (".png", ".jpg", ".jpeg", ".webp"):
         raise HTTPException(422, f"不支持的格式：{suffix}（png/jpg/webp）")
+    # 上限守卫：新名才计容量（同名追加不占新位）
+    existing = {a["character"] for a in character.list_style_anchors()}
+    if name not in existing and len(existing) >= STYLE_ANCHOR_MAX:
+        raise HTTPException(422,
+                            f"风格锚已达上限 {STYLE_ANCHOR_MAX} 个（删除旧锚或同名覆盖迭代）")
     dest_dir = cfg.root / "exports" / "_style_anchors"
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{name}_{int(time.time())}{suffix}"
@@ -426,6 +436,22 @@ async def api_upload_style_anchor(request: Request,
                                actor=_actor(x_actor_id, x_actor_name),
                                kind="style")
     return {"anchor_id": aid, "image_path": rel}
+
+
+@router.delete("/api/style-anchors/{name}")
+def api_delete_style_anchor(name: str, request: Request,
+                            anchor_id: int = None,
+                            x_token: str = Header(None),
+                            x_actor_id: str = Header(None),
+                            x_actor_name: str = Header(None)):
+    """删除风格锚。?anchor_id= 只删一条（同名的某次迭代）；缺省删该名全部。"""
+    _check_token(request, x_token)
+    from . import character
+    deleted = character.delete_style_anchor(
+        name, anchor_id=anchor_id, actor=_actor(x_actor_id, x_actor_name))
+    if not deleted:
+        raise HTTPException(404, f"风格锚「{name}」不存在")
+    return {"deleted": deleted}
 
 
 @router.get("/api/runs/{run_id}/consistency")

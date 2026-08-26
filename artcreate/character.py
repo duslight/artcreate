@@ -154,6 +154,36 @@ def list_style_anchors():
     return out
 
 
+def count_style_anchor_names() -> int:
+    """风格锚名数（库容量，上限守卫用）。"""
+    init_character()
+    with _LOCK:
+        row = _conn().execute(
+            "SELECT COUNT(DISTINCT character) FROM anchors"
+            " WHERE kind='style'").fetchone()
+    return row[0] or 0
+
+
+def delete_style_anchor(name: str, anchor_id: int = None, actor: dict = None):
+    """删除风格锚。anchor_id 空=删该名全部（常用）；给定=只删那一条。
+    返回删除条数。"""
+    init_character()
+    with _LOCK:
+        if anchor_id:
+            cur = _conn().execute(
+                "DELETE FROM anchors WHERE id=? AND kind='style'",
+                (anchor_id,))
+        else:
+            cur = _conn().execute(
+                "DELETE FROM anchors WHERE character=? AND kind='style'",
+                (name,))
+        _conn().commit()
+    log_event("style_anchor_deleted", actor, target_type="style_anchor",
+              target_id=name, detail={"anchor_id": anchor_id,
+                                      "deleted": cur.rowcount})
+    return cur.rowcount
+
+
 # ---------- 角色变体生成 ----------
 def character_spec(character: str, description: str, sheet: str = "立绘",
                    anchor_path: str = None, **kw) -> dict:

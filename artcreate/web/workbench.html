@@ -123,7 +123,7 @@
   padding:8px 10px;margin:10px 0 0;border:1px solid var(--line);border-radius:8px;background:#1b1d20">
   <span style="font-size:12px;color:var(--dim)">生图模型API</span>
   <select id="api-mode" onchange="toggleApiMode(this.value)" style="width:auto">
-    <option value="default">默认（我的API）</option>
+    <option value="default">默认</option>
     <option value="custom">自定义…</option>
   </select>
   <span id="api-custom" style="display:none;flex:1;min-width:340px;gap:6px" >
@@ -172,15 +172,21 @@
   </div>
   <label>约束轴</label>
   <div id="f-axes"></div>
-  <!-- 风格参考（画风固化：选中的参考图随编译词直送生图模型） -->
+  <!-- 风格参考管理（画风固化：显式建立/删除锚点，选中的参考图随编译词直送生图模型） -->
   <div id="style-ref-zone" style="margin-top:10px">
-    <label>风格参考（可选：锁定画风/质感，最多 3 张）</label>
+    <label>风格参考（可选：锁定画风/质感，每次生成最多挂 3 张）</label>
     <div id="style-ref-list" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
-    <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
-      <input type="text" id="style-ref-name" placeholder="新风格锚名（例：dungeon_gloom）" style="max-width:240px">
-      <input type="file" id="style-ref-file" accept=".png,.jpg,.jpeg,.webp" style="display:none" onchange="uploadStyleRef(this)">
-      <button onclick="document.getElementById('style-ref-file').click()">上传本地图为风格锚…</button>
-      <span style="font-size:11px;color:var(--dim)">任意分辨率均可（模型自行缩放）</span>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+      <button onclick="toggleAnchorPanel()">建立图片画风锚点…</button>
+      <span id="anchor-cap" style="font-size:11px;color:var(--dim)"></span>
+    </div>
+    <!-- 管理面板：建立行（初始 3 行，可加到上限）+ 已有锚删除 -->
+    <div id="anchor-panel" style="display:none;margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:8px;background:#191b1e">
+      <div style="font-size:12px;color:var(--dim);margin-bottom:8px">每行独立建立：填锚点名 + 选图（png/jpg/webp，任意分辨率）。同名再传 = 迭代该锚（历史保留，最新生效）。</div>
+      <div id="anchor-rows"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button onclick="addAnchorRow()">+ 加一行</button>
+      </div>
     </div>
   </div>
   <div class="row" style="margin-top:10px">
@@ -1033,7 +1039,6 @@ async function loadLiveCandidates(runId) {
             <button class="ok" onclick="liveAct('accept',${c.idx},this)">接受</button>
             <button class="no" onclick="liveAct('reject',${c.idx},this)">拒绝</button>
             <button onclick="liveMakeAnchor(${c.idx},'${runId}',this)">设为锚点</button>
-            <button onclick="liveMakeStyleAnchor(${c.idx},'${runId}',this)">设为风格锚</button>
             <button onclick="refineThisRun('${runId}',this)">精修</button>` : ''}
         </div>
       </div>`).join('')}</div>`;
@@ -1095,37 +1100,6 @@ async function liveMakeAnchor(idx, runId, btn) {
     } else {
       const e = await r.json().catch(() => ({}));
       toast('设为锚点失败：' + (e.detail || r.status), 'bad');
-    }
-  } catch (e) {
-    toast('操作失败：' + e, 'bad');
-  }
-}
-async function liveMakeStyleAnchor(idx, runId, btn) {
-  // 设为风格锚：把这张图的画风/质感固化为参考图，表单可挂载
-  const grid = document.getElementById('live-grid');
-  const subject = grid.dataset.subject || '';
-  const name = prompt('风格锚名？（用于表单选择，例：dungeon_gloom）', subject + '_style');
-  if (name === null) return;
-  const styleName = name.trim();
-  if (!styleName) { toast('风格锚名不能为空', 'bad'); return; }
-  const card = btn ? btn.closest('.lcard') : null;
-  const file = card ? card.querySelector('img').src.split('/').pop() : '';
-  try {
-    const r = await fetch(`/api/characters/${encodeURIComponent(styleName)}/anchor`, {
-      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
-      body: JSON.stringify({
-        image_path: `exports/${subject}/${runId}/${file}`,
-        note: `run ${runId} #${idx} 风格固化`,
-        from_candidate: `${runId}#${idx}`,
-        kind: 'style',
-      }),
-    });
-    if (r.ok) {
-      await loadStyleAnchors();   // 刷新锚库，立即可选
-      toast(`风格锚「${styleName}」已入库——表单「风格参考」区点选即挂载`, 'ok');
-    } else {
-      const e = await r.json().catch(() => ({}));
-      toast('设为风格锚失败：' + (e.detail || r.status), 'bad');
     }
   } catch (e) {
     toast('操作失败：' + e, 'bad');
@@ -1275,12 +1249,16 @@ async function loadStyleAnchors() {
   try {
     const r = await fetch('/api/style-anchors', {headers: H()});
     if (!r.ok) return;
-    STYLE_ANCHORS = (await r.json()).anchors || [];
+    const d = await r.json();
+    STYLE_ANCHORS = d.anchors || [];
+    ANCHOR_MAX = d.max || 12;
   } catch (e) { return; }
   // 库中已不存在的锚名清出选中态（防悬挂引用）
   const names = new Set(STYLE_ANCHORS.map(a => a.character));
   for (const set of Object.values(styleRefSets))
     for (const n of [...set]) if (!names.has(n)) set.delete(n);
+  const cap = document.getElementById('anchor-cap');
+  if (cap) cap.textContent = `锚库 ${STYLE_ANCHORS.length}/${ANCHOR_MAX} · 单次生成最多挂 3 张`;
   for (const p of Object.keys(STYLE_REF_PAGES)) renderStyleRefs(p);
 }
 function renderStyleRefs(prefix) {
@@ -1295,11 +1273,18 @@ function renderStyleRefs(prefix) {
     const url = refImgUrl(a.image_path);
     const on = selSet.has(a.character);
     return `
-    <div onclick="toggleStyleRef('${prefix}','${a.character}')" title="${a.note || ''}"
-      style="cursor:pointer;border:2px solid ${on ? 'var(--acc)' : 'var(--line)'};border-radius:8px;
-      padding:2px" onmouseover="this.style.borderColor='${on ? 'var(--acc)' : '#4a4f57'}'" onmouseout="this.style.borderColor='${on ? 'var(--acc)' : 'var(--line)'}'">
-      ${url ? `<img src="${url}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;display:block">` : ''}
-      <div style="font-size:11px;text-align:center;margin-top:2px;color:${on ? 'var(--acc)' : 'var(--dim)'}">${a.character}${a.total > 1 ? '·' + a.total : ''}</div>
+    <div title="${a.note || ''}"
+      style="border:2px solid ${on ? 'var(--acc)' : 'var(--line)'};border-radius:8px;padding:2px">
+      <div onclick="toggleStyleRef('${prefix}','${a.character}')" style="cursor:pointer"
+        onmouseover="this.parentElement.style.borderColor='${on ? 'var(--acc)' : '#4a4f57'}'"
+        onmouseout="this.parentElement.style.borderColor='${on ? 'var(--acc)' : 'var(--line)'}'">
+        ${url ? `<img src="${url}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;display:block">` : ''}
+        <div style="font-size:11px;text-align:center;margin-top:2px;color:${on ? 'var(--acc)' : 'var(--dim)'}">${a.character}${a.total > 1 ? '·' + a.total : ''}</div>
+      </div>
+      <div style="text-align:center;margin-top:1px">
+        <span onclick="deleteStyleAnchor('${a.character}')" title="删除该锚（全部迭代）"
+          style="cursor:pointer;font-size:11px;color:var(--bad);user-select:none">删除</span>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1318,25 +1303,71 @@ function selectedRefs(prefix) {
   return [...styleRefSets[prefix]].map(n => (STYLE_ANCHORS.find(a => a.character === n) || {}).image_path)
     .filter(Boolean);
 }
-async function uploadStyleRef(input) {
-  const file = input.files && input.files[0];
-  if (!file) return;
-  const name = document.getElementById('style-ref-name').value.trim();
-  if (!name) { toast('先填风格锚名（用于表单选择）', 'bad'); input.value = ''; return; }
+// ---- 风格锚管理面板（显式建立/删除） ----
+let ANCHOR_MAX = 12;
+function toggleAnchorPanel() {
+  const p = document.getElementById('anchor-panel');
+  const open = p.style.display === 'none';
+  p.style.display = open ? '' : 'none';
+  if (open && !document.getElementById('anchor-rows').children.length)
+    for (let i = 0; i < 3; i++) addAnchorRow();   // 初始 3 行
+}
+function addAnchorRow() {
+  const rows = document.getElementById('anchor-rows');
+  if (rows.children.length >= ANCHOR_MAX) { toast(`最多 ${ANCHOR_MAX} 个风格锚`, 'info'); return; }
+  const n = rows.children.length + 1;
+  rows.insertAdjacentHTML('beforeend', `
+    <div class="anchor-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+      <input type="text" class="ar-name" placeholder="锚点名（例：dungeon_gloom）" style="max-width:200px">
+      <input type="file" class="ar-file" accept=".png,.jpg,.jpeg,.webp" style="max-width:260px">
+      <button class="go ar-go" style="margin-top:0" onclick="submitAnchorRow(this)">建立</button>
+      <span class="ar-msg" style="font-size:11px;color:var(--dim)"></span>
+      <button onclick="this.closest('.anchor-row').remove()" title="移除此行（未建立）" style="color:var(--bad);border-color:var(--bad)">×</button>
+    </div>`);
+}
+async function submitAnchorRow(btn) {
+  const row = btn.closest('.anchor-row');
+  const name = row.querySelector('.ar-name').value.trim();
+  const file = row.querySelector('.ar-file').files[0];
+  const msg = row.querySelector('.ar-msg');
+  if (!name) { toast('锚点名必填', 'bad'); return; }
+  if (!file) { toast('选择一张图', 'bad'); return; }
+  btn.disabled = true; msg.textContent = '上传中…';
   const fd = new FormData();
   fd.append('name', name);
-  fd.append('note', `本地导入 ${file.name}`);
+  fd.append('note', `管理面板 ${file.name}`);
   fd.append('file', file);
-  const r = await fetch('/api/style-anchors/upload', {method: 'POST', headers: H(), body: fd});
+  try {
+    const r = await fetch('/api/style-anchors/upload', {method: 'POST', headers: H(), body: fd});
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) {
+      msg.style.color = 'var(--ok)';
+      msg.textContent = `已建立（#${d.anchor_id}）`;
+      row.querySelector('.ar-name').disabled = true;
+      row.querySelector('.ar-file').disabled = true;
+      btn.textContent = '已建立';   // 行锁定，防重复提交
+      await loadStyleAnchors();
+    } else {
+      msg.style.color = 'var(--bad)';
+      msg.textContent = d.detail || ('失败 ' + r.status);
+      btn.disabled = false;
+    }
+  } catch (e) {
+    msg.style.color = 'var(--bad)';
+    msg.textContent = '操作失败：' + e;
+    btn.disabled = false;
+  }
+}
+async function deleteStyleAnchor(name) {
+  if (!confirm(`删除风格锚「${name}」？该锚全部迭代将移除，挂载中的引用自动清出。`)) return;
+  const r = await fetch(`/api/style-anchors/${encodeURIComponent(name)}`, {method: 'DELETE', headers: H()});
   const d = await r.json().catch(() => ({}));
   if (r.ok) {
-    toast(`风格锚「${name}」已入库——下方点选即挂载`, 'ok');
-    document.getElementById('style-ref-name').value = '';
-    await loadStyleAnchors();
+    toast(`已删除「${name}」（${d.deleted} 条）`, 'ok');
+    await loadStyleAnchors();   // 内含选中态悬挂清理 + 三页重渲染
   } else {
-    toast('上传失败：' + (d.detail || r.status), 'bad');
+    toast('删除失败：' + (d.detail || r.status), 'bad');
   }
-  input.value = '';
 }
 
 // ---- 角色模式（立绘生成：复用编译审核链路，atype 锁角色轴） ----
