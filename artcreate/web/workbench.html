@@ -960,10 +960,8 @@ async function liveAct(kind, idx, btn) {
 }
 async function refineThisRun(runId, btn) {
   if (btn) btn.disabled = true;
-  // 候选卡精修入口：取历史 spec+编译词 → 回填表单 → 直达审核卡精修
+  // 候选卡精修入口：fillFromRun 内部已"载入即直达"（跳过重编译直达审核卡+精修）
   await fillFromRun(runId);
-  document.getElementById('review-card').style.display = 'none';   // 无新编译，先藏审核卡
-  await submitJob();   // 带历史编译词自动直达审核卡+精修（跳过重编译）
 }
 function zoomLive(src) { window.open(src, '_blank'); }
 
@@ -993,7 +991,7 @@ async function pickHistory(i) {
   if (!r) return;
   toggleHistoryPanel();
   await fillFromRun(r.run_id, r);
-  toast(`已载入 ${r.subject}（rev${r.revision}）· 点「提交生成任务」直达历史编译词精修`, 'ok');
+  toast(`已载入 ${r.subject}（rev${r.revision}）· 历史编译词已直达精修`, 'ok');
 }
 async function fillFromRun(runId, meta) {
   const full = await (await fetch(`/api/spec/${runId}`, {headers: H()})).json();
@@ -1021,18 +1019,20 @@ async function fillFromRun(runId, meta) {
     if (el) { el.classList.add('on'); axisSel[ax] = opt; }
   }
   // 历史编译词携带：进精修模式的底稿（prompt=spec 直通词 / segments=分段 /
-  // prompt_zh 用翻译端点按需补齐）
+  // prompt_zh=存底直用（新 run 有），老 run 缺失时直达补译）
   loadedCompile = {
     prompt: spec.compiled_prompt || full.prompt || '',
     segments: spec.compiled_segments || full.segments || null,
-    prompt_zh: '',
+    prompt_zh: spec.compiled_prompt_zh || '',
   };
   parentRun = runId;
   document.getElementById('form-extra').style.display = '';
   document.getElementById('form-parent-info').textContent =
-    `迭代自 run ${runId}（${meta ? meta.subject : spec.subject || ''}）——已携带历史编译词，提交后可在审核卡精修`;
+    `迭代自 run ${runId}（${meta ? meta.subject : spec.subject || ''}）——历史编译词已直达下方审核卡，可精修`;
   ['f-atype','f-style','f-mood'].forEach(id => showDesc(document.getElementById(id)));
   previewName();
+  // 载入即直达：跳过 LLM 重编译，直接以历史编译词开审核卡+精修（带编译词才有意义）
+  if (loadedCompile && loadedCompile.prompt) await submitJob();
 }
 
 // ---- 动作批量（7-B） ----
