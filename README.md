@@ -55,10 +55,10 @@ python -m artcreate serve                    # http://127.0.0.1:8870
 
 ### 服务器部署
 
-见 `deploy/README.md`（systemd + nginx + 令牌 + 备份完整手册）。要点：
+见 `deploy/README.md`（systemd + 令牌 + 备份完整手册）。要点：
 
 ```bash
-python -m artcreate serve --host 0.0.0.0 --port 8870   # 配 WORKBENCH_TOKEN + nginx 反代
+python -m artcreate serve --host 0.0.0.0 --port 8870   # 配 WORKBENCH_TOKEN，浏览器直连 http://<公网IP>:8870
 ```
 
 ## 主要命令

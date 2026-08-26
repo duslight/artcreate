@@ -4,16 +4,18 @@
 + 内嵌 worker 线程（串行生成队列）+ 空闲蒸馏。**一个 systemd 服务即全部**，
 无需额外的队列/worker/数据库进程。
 
+**访问方式：公网 IP 直连（无域名、无备案、无 nginx）**——
+浏览器直接开 `http://<公网IP>:8870/workbench.html`。
+
 ## 1. 前置条件
 
 - Ubuntu 20.04+，2C4G 起步（生成是调云端 API，本机只做后处理，负载很低）
-- 安全组/防火墙：只放行 22、80/443；**8870 不对公网开放**（走 nginx 反代）
-- 已有域名并完成备案（国内服务器 80/443 需备案）
+- 安全组/防火墙：放行 22、**8870**（Web 入口）
 
 ## 2. 拉代码 + 环境
 
 ```bash
-sudo apt update && sudo apt install -y python3-venv git nginx
+sudo apt update && sudo apt install -y python3-venv git
 sudo mkdir -p /opt/artcreate && sudo chown $USER /opt/artcreate
 cd /opt/artcreate
 git clone https://github.com/duslight/artcreate.git .
@@ -58,26 +60,24 @@ systemctl status artcreate          # 应为 active (running)
 journalctl -u artcreate -f          # 看日志（uvicorn 启动 + worker 心跳）
 ```
 
-## 6. nginx 反代（80/443 → 127.0.0.1:8870）
+## 6. 直接访问（无 nginx）
+
+服务绑定 0.0.0.0（systemd unit 已配置 `--host 0.0.0.0`）：
 
 ```bash
-sudo cp deploy/nginx-artcreate.conf /etc/nginx/sites-available/artcreate
-sudo ln -s /etc/nginx/sites-available/artcreate /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
+# 浏览器直接打开（任何设备）：
+http://<公网IP>:8870/            # 评审视图
+http://<公网IP>:8870/workbench.html   # 工作台
 ```
 
-HTTPS 证书（certbot）：
-
-```bash
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d art.example.com
-```
+> 曾经的 nginx 反代 + HTTPS 方案已移除（域名路线废弃）。若未来需要 HTTPS，
+> 再考虑加反代或 caddy；当前令牌鉴权（X-Token）已覆盖基本访问控制。
 
 ## 7. 验收
 
 ```bash
 curl http://127.0.0.1:8870/api/events?limit=1 -H "X-Token: xxx"   # 应返回 JSON
-# 浏览器：https://art.example.com/workbench.html
+# 浏览器：http://<公网IP>:8870/workbench.html
 #   1) 令牌栏填 WORKBENCH_TOKEN
 #   2) 提交一个小批量任务 → 轮询到 done → 跳评审视图
 #   3) 提案页应显示历史蒸馏提案
