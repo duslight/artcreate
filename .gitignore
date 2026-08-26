@@ -34,4 +34,4 @@ Thumbs.db
 *.db
 
 # 运行日志
-serve_console.log
+serve_console*.log
