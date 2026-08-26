@@ -77,10 +77,10 @@
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
     <span style="color:var(--dim);font-size:11px;min-width:60px">审校管理</span>
-    <button id="nav-jobs" onclick="show('jobs')">任务</button>
-    <button id="nav-feed" onclick="show('feed')">时间线</button>
-    <button id="nav-prop" onclick="show('prop')">提案<span id="prop-badge" style="display:none;background:var(--gold);color:#141517;border-radius:8px;font-size:10px;padding:0 5px;margin-left:3px">0</span></button>
-    <button id="nav-review" onclick="location.href='/'">评审视图 →</button>
+    <button id="nav-jobs" onclick="show('jobs')">任务队列</button>
+    <button id="nav-feed" onclick="show('feed')">历史任务</button>
+    <button id="nav-prop" onclick="show('prop')">画风回写<span id="prop-badge" style="display:none;background:var(--gold);color:#141517;border-radius:8px;font-size:10px;padding:0 5px;margin-left:3px">0</span></button>
+    <button id="nav-review" onclick="location.href='/'">评审视图</button>
   </div>
 </nav>
 
@@ -117,7 +117,11 @@
   </div>
   <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
     <button class="go" onclick="submitJob()">提交生成任务</button>
-    <button onclick="loadFromHistory()">从历史载入迭代…</button>
+    <button onclick="toggleHistoryPanel()">从历史载入迭代…</button>
+  </div>
+  <div id="history-panel" style="display:none;margin-top:10px;border:1px solid var(--line);border-radius:6px;padding:10px">
+    <div style="font-size:12px;color:var(--dim);margin-bottom:8px">点选一个历史 run 载入（最近 30 条）</div>
+    <div id="history-list" style="max-height:260px;overflow-y:auto">加载中…</div>
   </div>
   <div class="idbox">身份：<input type="text" id="f-me" placeholder="你的名字（跨设备看是谁操作）" oninput="saveMe()"> <span id="f-me-id"></span></div>
 </div>
@@ -513,20 +517,37 @@ async function liveAct(kind, idx) {
 }
 function zoomLive(src) { window.open(src, '_blank'); }
 
-// ---- 从历史载入（迭代入口）----
-async function loadFromHistory() {
-  const rs = await (await fetch('/api/runs', {headers: H()})).json();
-  const pick = prompt(
-    `选一个历史 run 载入（输入序号）：\n` +
-    rs.slice(0, 20).map((r, i) =>
-      `${i + 1}. ${r.subject} · rev${r.revision} · ${r.created_at}${r.pose ? ' · 动作:' + r.pose : ''}`
-    ).join('\n') + '\n\n（取消=不载入）');
-  if (!pick) return;
-  const r = rs[parseInt(pick) - 1];
-  if (!r) { alert('序号无效'); return; }
-  const full = await (await fetch(`/api/spec/${r.run_id}`, {headers: H()})).json();
+// ---- 从历史载入（迭代入口：可点选列表）----
+let HIST_RUNS = null;
+function toggleHistoryPanel() {
+  const p = document.getElementById('history-panel');
+  const open = p.style.display === 'none';
+  p.style.display = open ? '' : 'none';
+  if (open) loadHistoryList();
+}
+async function loadHistoryList() {
+  HIST_RUNS = await (await fetch('/api/runs', {headers: H()})).json();
+  const el = document.getElementById('history-list');
+  el.innerHTML = HIST_RUNS.slice(0, 30).map((r, i) => `
+    <div class="hist-item" onclick="pickHistory(${i})" style="display:flex;gap:8px;align-items:center;
+      padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px"
+      onmouseover="this.style.background='#22252a'" onmouseout="this.style.background=''">
+      <b>${r.subject}</b>
+      <span class="meta">rev${r.revision}${r.pose ? ' · 动作:' + r.pose : ''} · ${r.created_at}</span>
+      <span style="flex:1"></span>
+      <code style="font-size:11px;color:var(--dim)">${r.run_id.slice(-6)}</code>
+    </div>`).join('') || '<div class="empty">暂无历史 run</div>';
+}
+async function pickHistory(i) {
+  const r = HIST_RUNS[i];
+  if (!r) return;
+  toggleHistoryPanel();
+  await fillFromRun(r.run_id, r);
+  alert(`已载入 ${r.subject}（rev${r.revision}），修改后重新提交即记为该资产的迭代`);
+}
+async function fillFromRun(runId, meta) {
+  const full = await (await fetch(`/api/spec/${runId}`, {headers: H()})).json();
   const spec = full.spec || {};
-  // 回填
   document.getElementById('f-aname').value = spec.asset_name || spec.subject || '';
   document.getElementById('f-asuffix').value = spec.asset_suffix_key || 'none';
   document.getElementById('f-desc').value = spec.description || '';
@@ -542,13 +563,12 @@ async function loadFromHistory() {
     const el = document.querySelector(`.opt[data-axis="${ax}"][data-opt="${opt}"]`);
     if (el) { el.classList.add('on'); axisSel[ax] = opt; }
   }
-  parentRun = r.run_id;
+  parentRun = runId;
   document.getElementById('form-extra').style.display = '';
   document.getElementById('form-parent-info').textContent =
-    `迭代自 run ${r.run_id}（${r.subject} rev${r.revision}）——修改后重提，自动记录迭代链`;
+    `迭代自 run ${runId}（${meta ? meta.subject : spec.subject || ''}）——修改后重提，自动记录迭代链`;
   ['f-atype','f-style','f-mood'].forEach(id => showDesc(document.getElementById(id)));
   previewName();
-  alert('已载入，修改后重新提交即记为该资产的迭代');
 }
 
 // ---- 动作批量（7-B） ----
@@ -627,12 +647,14 @@ function goReview(runId) {
   location.href = '/';
 }
 
-// ---- 时间线 ----
+// ---- 历史任务（时间线）----
 async function loadFeed() {
-  const [evs, acts, actors] = await Promise.all([
+  // 两请求两用途：evs=筛选后展示，actors=筛选项来源（修复：旧代码解构 3 变量，
+  // actors undefined → .map 抛异常 → 静默失败 → 时间线永远空白）
+  const [evs, actors] = await Promise.all([
     fetch(`/api/events?limit=100${document.getElementById('ev-action').value ? '&action=' + document.getElementById('ev-action').value : ''}${document.getElementById('ev-actor').value ? '&actor_id=' + document.getElementById('ev-actor').value : ''}`, {headers: H()}).then(r => r.json()),
     fetch('/api/events?limit=200', {headers: H()}).then(r => r.json()),
-  ]);
+  ]).catch(() => [[], []]);
   // 筛选项填充（一次性）
   const actSel = document.getElementById('ev-action');
   const acts_set = [...new Set(actors.map(e => e.action))].sort();
@@ -640,7 +662,6 @@ async function loadFeed() {
   const whoSel = document.getElementById('ev-actor');
   const who_set = [...new Set(actors.map(e => e.actor_name || e.actor_id))].sort();
   if (whoSel.options.length <= 1) {
-    actors.forEach(e => {}); // noop
     const idMap = {};
     actors.forEach(e => { idMap[e.actor_name || e.actor_id] = e.actor_id; });
     who_set.forEach(w => whoSel.insertAdjacentHTML('beforeend', `<option value="${idMap[w]}">${w}</option>`));
@@ -672,31 +693,6 @@ loadDict().then(() => {
     fillFromRun(goto);
   }
 });
-async function fillFromRun(runId) {
-  const full = await (await fetch(`/api/spec/${runId}`, {headers: H()})).json();
-  const spec = full.spec || {};
-  document.getElementById('f-aname').value = spec.asset_name || spec.subject || '';
-  document.getElementById('f-asuffix').value = spec.asset_suffix_key || 'none';
-  document.getElementById('f-desc').value = spec.description || '';
-  if (spec.asset_type) document.getElementById('f-atype').value = spec.asset_type;
-  if (spec.art_style) document.getElementById('f-style').value = spec.art_style;
-  if (spec.mood) document.getElementById('f-mood').value = spec.mood;
-  if (spec.size) document.getElementById('f-size').value = spec.size;
-  document.getElementById('f-free').value = (spec.constraints || {}).free_text || '';
-  document.getElementById('f-fneg').value = (spec.constraints || {}).free_text_negative || '';
-  axisSel = {};
-  document.querySelectorAll('#f-axes .opt').forEach(el => el.classList.remove('on'));
-  for (const [ax, opt] of Object.entries((spec.constraints || {}).axis_sel || {})) {
-    const el = document.querySelector(`.opt[data-axis="${ax}"][data-opt="${opt}"]`);
-    if (el) { el.classList.add('on'); axisSel[ax] = opt; }
-  }
-  parentRun = runId;
-  document.getElementById('form-extra').style.display = '';
-  document.getElementById('form-parent-info').textContent =
-    `迭代自 run ${runId}（${spec.subject || ''}）——修改后重提，自动记录迭代链`;
-  ['f-atype','f-style','f-mood'].forEach(id => showDesc(document.getElementById(id)));
-  previewName();
-}
 </script>
 </body>
 </html>
