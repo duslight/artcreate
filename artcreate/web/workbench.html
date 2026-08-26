@@ -100,7 +100,7 @@
   <div class="row">
     <div><label>氛围</label><select id="f-mood" onchange="showDesc(this)"></select><div class="desc" id="desc-f-mood"></div></div>
     <div><label>尺寸</label><select id="f-size"></select></div>
-    <div><label>数量</label><select id="f-count"></select></div>
+    <div><label>数量 <span style="font-size:11px;color:var(--dim)">每 1 张图成本≈0.2 元</span></label><select id="f-count"></select></div>
   </div>
   <label>约束轴</label>
   <div id="f-axes"></div>
@@ -555,6 +555,13 @@ async function fillFromRun(runId, meta) {
   if (spec.art_style) document.getElementById('f-style').value = spec.art_style;
   if (spec.mood) document.getElementById('f-mood').value = spec.mood;
   if (spec.size) document.getElementById('f-size').value = spec.size;
+  // 出图数量回填：下拉选项不存在时（如历史 spec 的 3/5）动态追加，避免静默回落 4
+  if (spec.count) {
+    const csel = document.getElementById('f-count');
+    if (![...csel.options].some(o => o.value === String(spec.count)))
+      csel.insertAdjacentHTML('beforeend', `<option>${spec.count}</option>`);
+    csel.value = spec.count;
+  }
   document.getElementById('f-free').value = (spec.constraints || {}).free_text || '';
   document.getElementById('f-fneg').value = (spec.constraints || {}).free_text_negative || '';
   axisSel = {};
