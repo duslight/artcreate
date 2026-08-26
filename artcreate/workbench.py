@@ -94,8 +94,19 @@ def compile_preview(request: Request, spec: dict,
                                   "message": format_issues(issues)})
     result = compile_prompt(spec)
     warnings = lint_spec(spec, result["prompt"])
+    # 完整 prompt 的中文翻译（审核用：不懂英文也能核对全貌）
+    prompt_zh = ""
+    try:
+        from .tools.llm_client import text_chat
+        raw = text_chat(
+            "把下面的英文生图提示词翻译成通顺的中文，直接输出译文，"
+            "不要任何解释：\n" + result["prompt"], temperature=0.2)
+        prompt_zh = raw.strip()
+    except Exception:
+        prompt_zh = ""   # 翻译失败不阻断审核（分段对照仍在）
     return {
         "prompt": result["prompt"],
+        "prompt_zh": prompt_zh,
         "segments": result["segments"],
         "explain": explain_spec(spec),
         "lint": warnings,

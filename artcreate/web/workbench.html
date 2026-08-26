@@ -107,9 +107,9 @@
   <div class="row" style="margin-top:10px">
     <div><label>正向自由约束（描述"应该是什么"）</label>
       <textarea id="f-free" placeholder="例：画面重心偏左，右侧留白"></textarea></div>
-    <div><label>负向自由约束（描述"不要出现什么"）</label>
+    <div><label>负向自由约束（不要出现什么）</label>
       <textarea id="f-fneg" placeholder="例：蜘蛛、篝火"></textarea>
-      <div class="desc show" style="border-left-color:var(--warn)">机制：负向约束编译为排除名词，进入提示词末尾的「strictly no…」排除子句——模型对排除块的否定不反向激活；与正向描述里写"不要X"（会被反向激活的粉红大象问题）机制不同，这里是安全用法。</div></div>
+      <div class="desc show" style="border-left-color:var(--warn)">生图模型听不懂"不要"——描述里写"不要蜘蛛"，它反而更容易画出蜘蛛。想排除的东西写在这栏：系统翻成英文放进提示词末尾的"禁止清单"，模型才会真的不画它。</div></div>
   </div>
   <div id="form-extra" style="display:none;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">
     <label style="color:var(--acc)">迭代来源</label>
@@ -127,8 +127,11 @@
   <div style="font-weight:500;color:var(--warn);margin-bottom:6px">编译审核（确认前不产生生图费用）</div>
   <div id="review-explain"></div>
   <div id="review-lint"></div>
-  <details style="margin-top:8px"><summary style="cursor:pointer;color:var(--dim);font-size:12px">完整英文 prompt（将直送生图模型）</summary>
-    <div id="review-prompt" style="background:#191b1e;border:1px solid var(--line);border-radius:6px;padding:10px;font-size:11px;color:var(--dim);margin-top:6px;word-break:break-all"></div></details>
+  <details style="margin-top:8px" open><summary style="cursor:pointer;color:var(--dim);font-size:12px">完整 prompt（将直送生图模型）</summary>
+    <div style="background:#191b1e;border:1px solid var(--line);border-radius:6px;padding:10px;margin-top:6px">
+      <div id="review-prompt-zh" style="font-size:12px;color:var(--txt);line-height:1.7"></div>
+      <div id="review-prompt" style="font-size:11px;color:var(--dim);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);word-break:break-all"></div>
+    </div></details>
   <div style="display:flex;gap:8px;margin-top:12px">
     <button class="go" onclick="confirmCompile()">确认生成（按此编译执行）</button>
     <button onclick="closeReview()">回去修改</button>
@@ -429,6 +432,8 @@ function renderReviewCard(d) {
     ? lints.map(w => `<div style="font-size:12px;color:${w.level === 'block' ? 'var(--bad)' : 'var(--warn)'}">${w.level === 'block' ? '⛔' : '⚠️'} ${w.message}${w.fix ? `<div style="color:var(--dim);font-size:11px">建议：${w.fix}</div>` : ''}</div>`).join('')
     : '<div style="font-size:12px;color:var(--ok)">✓ lint 全部通过</div>';
   document.getElementById('review-prompt').textContent = d.prompt;
+  document.getElementById('review-prompt-zh').textContent =
+    d.prompt_zh || '（中文翻译暂不可用，上方分段对照仍可核对）';
   const card = document.getElementById('review-card');
   card.style.display = '';
   card.scrollIntoView({behavior: 'smooth'});
