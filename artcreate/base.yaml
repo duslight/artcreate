@@ -226,6 +226,28 @@ constraint_axes:
           positive: ["back view, facing away from viewer"],
           zh: { positive: ["背面，背向观者"] },
           verify_question: "角色是否背向观者？" }
+  - id: char_light
+    label: "打光"
+    desc: "立绘光源方式（角色页替代「氛围」：氛围是场景概念，角色只需光）"
+    applies_to: [character]
+    options:
+      - { id: any,      label: "不限" }
+      - { id: neutral,  label: "均匀平光",
+          positive: ["even neutral studio lighting, soft uniform illumination, no dramatic shadows"],
+          zh: { positive: ["均匀中性布光，柔和统一照明，无戏剧阴影"] },
+          verify_question: "角色是否为均匀平光（无强烈明暗对比）？" }
+      - { id: rim,      label: "轮廓光",
+          positive: ["strong rim lighting, glowing edge light outlining the silhouette from behind"],
+          zh: { positive: ["背后轮廓光勾勒剪影边缘"] },
+          verify_question: "角色边缘是否有明显轮廓光？" }
+      - { id: dramatic, label: "戏剧明暗",
+          positive: ["dramatic chiaroscuro lighting, strong light-shadow contrast, single hard key light"],
+          zh: { positive: ["戏剧明暗对照，强光影对比，单一硬主光"] },
+          verify_question: "角色是否有强烈的明暗对比打光？" }
+      - { id: warm_fire, label: "暖光源",
+          positive: ["warm firelight glow from one side, amber tones on skin and armor"],
+          zh: { positive: ["单侧暖火光，琥珀色调落在皮肤与护甲上"] },
+          verify_question: "角色是否被暖色光源照亮？" }
 
 # ---------- 角色动作字典（7-B：pose-batch 逐项注入的预写英文动作词） ----------
 # inject：姿态/重心/肢体/表情四要素的纯英文物理描述（与 moods.inject 同哲学：不依赖 LLM 现编）
