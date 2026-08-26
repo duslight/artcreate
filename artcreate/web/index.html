@@ -171,6 +171,7 @@ function render(d) {
           <button class="ok" onclick="act('accept',${c.idx},this)">接受</button>
           <button class="no" onclick="act('reject',${c.idx},this)">拒绝</button>
           <button onclick="makeAnchor(${c.idx},this)">设为锚点</button>
+          <button onclick="makeStyleAnchor(${c.idx},this)">设为风格锚</button>
           <button onclick="refineRun(this)">精修</button>` : ''}
       </div>
       ${(mech||l3) ? `<div class="checks">${mech}${l3}</div>` : ''}
@@ -267,6 +268,44 @@ async function makeAnchor(idx, btn) {
     return;
   }
   loadConsistency(curRun);   // 刷新 Δ 徽标（新锚点立即参与一致性对比）
+}
+
+async function makeStyleAnchor(idx, btn) {
+  // 设为风格锚：把这张图的画风/质感固化为参考图（工作台表单可挂载）
+  const d = curData;
+  if (!d) return;
+  const name = prompt('风格锚名？（用于工作台表单选择，例：dungeon_gloom）',
+                      d.run.subject + '_style');
+  if (name === null) return;
+  const styleName = name.trim();
+  if (!styleName) { toast('风格锚名不能为空', 'bad'); return; }
+  btn.disabled = true;
+  try {
+    const c = d.candidates[idx] || {};
+    const image_path = `exports/${d.run.subject}/${d.run.run_id}/${c.file || ''}`;
+    const r = await fetch(`/api/characters/${encodeURIComponent(styleName)}/anchor`, {
+      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+      body: JSON.stringify({
+        image_path,
+        note: `run ${d.run.run_id} #${idx} 风格固化`,
+        from_candidate: `${d.run.run_id}#${idx}`,
+        kind: 'style',
+      }),
+    });
+    if (r.ok) {
+      const j = await r.json();
+      toast(`风格锚「${styleName}」已入库（#${j.anchor_id}）——工作台表单「风格参考」区点选即挂载`, 'ok');
+    } else {
+      const e = await r.json().catch(() => ({}));
+      toast('设为风格锚失败：' + (e.detail || r.status), 'bad');
+      btn.disabled = false;
+      return;
+    }
+  } catch (e) {
+    toast('操作失败：' + e, 'bad');
+    btn.disabled = false;
+    return;
+  }
 }
 
 async function act(kind, idx, btn) {

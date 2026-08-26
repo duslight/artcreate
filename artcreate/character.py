@@ -60,13 +60,16 @@ def consistency_report(candidate_path, anchor_path) -> dict:
 
 
 # ---------- 锚点注册表 ----------
+# kind：character=角色形象锚 / style=风格锚（2026-08-26 风格固化方案A）。
+# 旧表无 kind 列 → init 时自动 ALTER 补列，默认 character。
 ANCHORS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS anchors (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    character   TEXT NOT NULL,             -- 角色名（=subject）
+    character   TEXT NOT NULL,             -- 拥有者名（角色名/风格锚名）
     image_path  TEXT NOT NULL,             -- 锚点图（相对仓库根）
     note        TEXT,                      -- 三视图/立绘/来源说明
     parent_anchor INTEGER,                 -- 晋升链：上一个锚点 id
+    kind        TEXT DEFAULT 'character',  -- character | style
     created_at  TEXT DEFAULT (datetime('now','localtime'))
 );
 """
@@ -75,51 +78,80 @@ CREATE TABLE IF NOT EXISTS anchors (
 def init_character():
     with _LOCK:
         _conn().executescript(ANCHORS_SCHEMA)
+        # 旧库迁移：无 kind 列则补（默认 character，旧行语义不变）
+        cols = {r["name"] for r in
+                _conn().execute("PRAGMA table_info(anchors)").fetchall()}
+        if "kind" not in cols:
+            _conn().execute(
+                "ALTER TABLE anchors ADD COLUMN kind TEXT DEFAULT 'character'")
         _conn().commit()
 
 
 def set_anchor(character: str, image_path: str, note: str = "",
-               actor: dict = None, from_candidate: str = None):
-    """设定/更新锚点。from_candidate: "run_id#idx"（从拍板候选晋升，记链）。"""
+               actor: dict = None, from_candidate: str = None,
+               kind: str = "character"):
+    """设定/更新锚点。from_candidate: "run_id#idx"（从拍板候选晋升，记链）。
+    kind: character（角色形象锚）| style（风格锚，画风固化参考）。"""
     init_character()
     parent = None
     if from_candidate:
         run_id, idx = from_candidate.split("#")
         with _LOCK:
             row = _conn().execute(
-                "SELECT id FROM anchors WHERE character=? ORDER BY id DESC LIMIT 1",
-                (character,)).fetchone()
+                "SELECT id FROM anchors WHERE character=? AND kind=?"
+                " ORDER BY id DESC LIMIT 1",
+                (character, kind)).fetchone()
         parent = row["id"] if row else None
     with _LOCK:
         cur = _conn().execute(
-            "INSERT INTO anchors (character, image_path, note, parent_anchor)"
-            " VALUES (?,?,?,?)", (character, image_path, note, parent))
+            "INSERT INTO anchors (character, image_path, note, parent_anchor, kind)"
+            " VALUES (?,?,?,?,?)", (character, image_path, note, parent, kind))
         _conn().commit()
         aid = cur.lastrowid
-    log_event("anchor_set", actor, target_type="character",
+    log_event("anchor_set", actor, target_type=kind + "_anchor",
               target_id=character, detail={"anchor_id": aid,
               "image": image_path, "from_candidate": from_candidate,
-              "parent_anchor": parent})
+              "parent_anchor": parent, "kind": kind})
     return aid
 
 
-def get_anchor(character: str):
-    """最新锚点（角色当前生效的形象基准）。"""
+def get_anchor(character: str, kind: str = "character"):
+    """最新锚点（角色当前生效的形象基准 / 风格锚最新一张）。"""
     init_character()
     with _LOCK:
         row = _conn().execute(
-            "SELECT * FROM anchors WHERE character=?"
-            " ORDER BY id DESC LIMIT 1", (character,)).fetchone()
+            "SELECT * FROM anchors WHERE character=? AND kind=?"
+            " ORDER BY id DESC LIMIT 1", (character, kind)).fetchone()
     return dict(row) if row else None
 
 
-def anchor_lineage(character: str):
-    """锚点晋升链（角色的形象演进史）。"""
+def anchor_lineage(character: str, kind: str = "character"):
+    """锚点晋升链（角色的形象演进史 / 风格锚演进史）。"""
     init_character()
     with _LOCK:
         rows = _conn().execute(
-            "SELECT * FROM anchors WHERE character=? ORDER BY id", (character,)).fetchall()
+            "SELECT * FROM anchors WHERE character=? AND kind=? ORDER BY id",
+            (character, kind)).fetchall()
     return [dict(r) for r in rows]
+
+
+def list_style_anchors():
+    """风格锚库全列（表单选择器数据源）：每风格名取最新一张 + 张数。"""
+    init_character()
+    with _LOCK:
+        rows = _conn().execute(
+            "SELECT character AS name, COUNT(*) AS total,"
+            " MAX(id) AS latest_id FROM anchors WHERE kind='style'"
+            " GROUP BY character ORDER BY latest_id DESC").fetchall()
+    out = []
+    for r in rows:
+        with _LOCK:
+            latest = _conn().execute(
+                "SELECT * FROM anchors WHERE id=?", (r["latest_id"],)).fetchone()
+        item = dict(latest)
+        item["total"] = r["total"]
+        out.append(item)
+    return out
 
 
 # ---------- 角色变体生成 ----------

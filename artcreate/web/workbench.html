@@ -153,6 +153,17 @@
   </div>
   <label>约束轴</label>
   <div id="f-axes"></div>
+  <!-- 风格参考（画风固化：选中的参考图随编译词直送生图模型） -->
+  <div id="style-ref-zone" style="margin-top:10px">
+    <label>风格参考（可选：锁定画风/质感，最多 3 张）</label>
+    <div id="style-ref-list" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
+    <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+      <input type="text" id="style-ref-name" placeholder="新风格锚名（例：dungeon_gloom）" style="max-width:240px">
+      <input type="file" id="style-ref-file" accept=".png,.jpg,.jpeg,.webp" style="display:none" onchange="uploadStyleRef(this)">
+      <button onclick="document.getElementById('style-ref-file').click()">上传本地图为风格锚…</button>
+      <span style="font-size:11px;color:var(--dim)">任意分辨率均可（模型自行缩放）</span>
+    </div>
+  </div>
   <div class="row" style="margin-top:10px">
     <div><label>正向自由约束（描述"应该是什么"）</label>
       <textarea id="f-free" placeholder="例：画面重心偏左，右侧留白"></textarea></div>
@@ -177,6 +188,7 @@
 
 <div id="review-card" class="panel" style="display:none;margin-top:14px;border-color:var(--warn)">
   <div style="font-weight:500;color:var(--warn);margin-bottom:6px">编译审核（确认前不产生生图费用）</div>
+  <div id="review-refs" style="display:none;margin-bottom:8px"></div>
   <div id="review-explain"></div>
   <div id="review-lint"></div>
   <details style="margin-top:8px" open><summary style="cursor:pointer;color:var(--dim);font-size:12px">完整 prompt（将直送生图模型）</summary>
@@ -257,6 +269,12 @@
   </div>
   <label>约束轴（角色适用）</label>
   <div id="c-axes"></div>
+  <!-- 风格参考（角色立绘同样可挂：画风+形象双锚定） -->
+  <div id="char-style-ref-zone" style="margin-top:10px">
+    <label>风格参考（可选：锁定画风/质感，最多 3 张）</label>
+    <div id="char-style-ref-list" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
+    <div style="font-size:11px;color:var(--dim)">与场景页共享风格锚库；上传入口在场景页</div>
+  </div>
   <div class="row" style="margin-top:10px">
     <div><label>正向自由约束（描述"应该是什么"）</label>
       <textarea id="c-free" placeholder="例：左手持弓，右手垂放"></textarea></div>
@@ -558,6 +576,8 @@ function collectSpec() {
   };
   if (parentRun) spec.parent_run = parentRun;
   if (!spec.description) { toast('描述必填', 'bad'); return null; }
+  const refs = selectedRefs(styleRefSel);
+  if (refs.length) spec.ref_images = refs;
   return spec;
 }
 async function submitJob() {
@@ -634,6 +654,17 @@ async function submitJob() {
   }
 }
 function renderReviewCard(d) {
+  // 参考图挂载显示（画风固化：这些图将随编译词直送生图模型）
+  const refBox = document.getElementById('review-refs');
+  const refs = (pendingSpec && pendingSpec.ref_images) || [];
+  if (refs.length) {
+    refBox.style.display = '';
+    refBox.innerHTML = `<div style="font-size:12px;color:var(--acc)">已挂风格参考 ${refs.length} 张（随编译词直送，锚定画风/质感）</div>`
+      + `<div style="display:flex;gap:6px;margin-top:4px">` + refs.map(p => {
+          const u = refImgUrl(p);
+          return u ? `<img src="${u}" title="${p}" style="width:56px;height:56px;object-fit:cover;border:1px solid var(--acc);border-radius:6px">` : '';
+        }).join('') + `</div>`;
+  } else refBox.style.display = 'none';
   document.getElementById('review-explain').innerHTML = (d.explain || []).map(s => `
     <div style="margin-bottom:6px">
       <span style="color:var(--acc);font-size:12px">【${s.section}】</span>
@@ -972,6 +1003,7 @@ async function loadLiveCandidates(runId) {
             <button class="ok" onclick="liveAct('accept',${c.idx},this)">接受</button>
             <button class="no" onclick="liveAct('reject',${c.idx},this)">拒绝</button>
             <button onclick="liveMakeAnchor(${c.idx},'${runId}',this)">设为锚点</button>
+            <button onclick="liveMakeStyleAnchor(${c.idx},'${runId}',this)">设为风格锚</button>
             <button onclick="refineThisRun('${runId}',this)">精修</button>` : ''}
         </div>
       </div>`).join('')}</div>`;
@@ -1033,6 +1065,37 @@ async function liveMakeAnchor(idx, runId, btn) {
     } else {
       const e = await r.json().catch(() => ({}));
       toast('设为锚点失败：' + (e.detail || r.status), 'bad');
+    }
+  } catch (e) {
+    toast('操作失败：' + e, 'bad');
+  }
+}
+async function liveMakeStyleAnchor(idx, runId, btn) {
+  // 设为风格锚：把这张图的画风/质感固化为参考图，表单可挂载
+  const grid = document.getElementById('live-grid');
+  const subject = grid.dataset.subject || '';
+  const name = prompt('风格锚名？（用于表单选择，例：dungeon_gloom）', subject + '_style');
+  if (name === null) return;
+  const styleName = name.trim();
+  if (!styleName) { toast('风格锚名不能为空', 'bad'); return; }
+  const card = btn ? btn.closest('.lcard') : null;
+  const file = card ? card.querySelector('img').src.split('/').pop() : '';
+  try {
+    const r = await fetch(`/api/characters/${encodeURIComponent(styleName)}/anchor`, {
+      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+      body: JSON.stringify({
+        image_path: `exports/${subject}/${runId}/${file}`,
+        note: `run ${runId} #${idx} 风格固化`,
+        from_candidate: `${runId}#${idx}`,
+        kind: 'style',
+      }),
+    });
+    if (r.ok) {
+      await loadStyleAnchors();   // 刷新锚库，立即可选
+      toast(`风格锚「${styleName}」已入库——表单「风格参考」区点选即挂载`, 'ok');
+    } else {
+      const e = await r.json().catch(() => ({}));
+      toast('设为风格锚失败：' + (e.detail || r.status), 'bad');
     }
   } catch (e) {
     toast('操作失败：' + e, 'bad');
@@ -1104,10 +1167,90 @@ async function fillFromRun(runId, meta) {
   document.getElementById('form-extra').style.display = '';
   document.getElementById('form-parent-info').textContent =
     `迭代自 run ${runId}（${meta ? meta.subject : spec.subject || ''}）——历史编译词已直达下方审核卡，可精修`;
+  // 风格参考回填：历史 spec 挂过的参考图按风格锚名重新选中（库中无则忽略）
+  styleRefSel.clear();
+  for (const p of (spec.ref_images || [])) {
+    const hit = STYLE_ANCHORS.find(a => a.image_path === p);
+    if (hit) styleRefSel.add(hit.character);
+  }
+  renderStyleRefs('f', styleRefSel);
   ['f-atype','f-style','f-mood'].forEach(id => showDesc(document.getElementById(id)));
   previewName();
   // 载入即直达：跳过 LLM 重编译，直接以历史编译词开审核卡+精修（带编译词才有意义）
   if (loadedCompile && loadedCompile.prompt) await submitJob();
+}
+
+// ---- 风格锚（画风固化：参考图随编译词直送生图模型，与提示词双保险） ----
+let STYLE_ANCHORS = [];          // 风格锚库（每名最新一张）
+const styleRefSel = new Set();   // 已选风格锚名（场景表单）
+const charStyleRefSel = new Set(); // 角色表单
+function refImgUrl(image_path) {
+  // exports/<subject>/<run_id>/<file> 三段式；_style_anchors 亦同构
+  const parts = (image_path || '').replace(/^exports\//, '').split('/');
+  return parts.length === 3
+    ? `/api/images/${encodeURIComponent(parts[0])}/${parts[1]}/${parts[2]}` : '';
+}
+async function loadStyleAnchors() {
+  try {
+    const r = await fetch('/api/style-anchors', {headers: H()});
+    if (!r.ok) return;
+    STYLE_ANCHORS = (await r.json()).anchors || [];
+  } catch (e) { return; }
+  renderStyleRefs('f', styleRefSel);
+  renderStyleRefs('c', charStyleRefSel);
+}
+function renderStyleRefs(prefix, selSet) {
+  const list = document.getElementById(prefix === 'f' ? 'style-ref-list' : 'char-style-ref-list');
+  if (!list) return;
+  if (!STYLE_ANCHORS.length) {
+    list.innerHTML = '<span style="font-size:12px;color:var(--dim)">暂无风格锚——满意候选点「设为风格锚」，或上传本地图</span>';
+    return;
+  }
+  list.innerHTML = STYLE_ANCHORS.map(a => {
+    const url = refImgUrl(a.image_path);
+    const on = selSet.has(a.character);
+    return `
+    <div onclick="toggleStyleRef('${prefix}','${a.character}',this)" title="${a.note || ''}"
+      style="cursor:pointer;border:2px solid ${on ? 'var(--acc)' : 'var(--line)'};border-radius:8px;
+      padding:2px;position:relative" onmouseover="this.style.borderColor='${on ? 'var(--acc)' : '#4a4f57'}'" onmouseout="this.style.borderColor='${on ? 'var(--acc)' : 'var(--line)'}'">
+      ${url ? `<img src="${url}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;display:block">` : ''}
+      <div style="font-size:11px;text-align:center;margin-top:2px;color:${on ? 'var(--acc)' : 'var(--dim)'}">${a.character}${a.total > 1 ? '·' + a.total : ''}</div>
+    </div>`;
+  }).join('');
+}
+function toggleStyleRef(prefix, name, el) {
+  const selSet = prefix === 'f' ? styleRefSel : charStyleRefSel;
+  if (selSet.has(name)) selSet.delete(name);
+  else {
+    if (selSet.size >= 3) { toast('风格参考最多 3 张（过多会互相稀释）', 'info'); return; }
+    selSet.add(name);
+  }
+  renderStyleRefs(prefix, selSet);
+}
+function selectedRefs(selSet) {
+  // Set<风格锚名> → 最新一张 image_path 列表（生图用参考图）
+  return [...selSet].map(n => (STYLE_ANCHORS.find(a => a.character === n) || {}).image_path)
+    .filter(Boolean);
+}
+async function uploadStyleRef(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const name = document.getElementById('style-ref-name').value.trim();
+  if (!name) { toast('先填风格锚名（用于表单选择）', 'bad'); input.value = ''; return; }
+  const fd = new FormData();
+  fd.append('name', name);
+  fd.append('note', `本地导入 ${file.name}`);
+  fd.append('file', file);
+  const r = await fetch('/api/style-anchors/upload', {method: 'POST', headers: H(), body: fd});
+  const d = await r.json().catch(() => ({}));
+  if (r.ok) {
+    toast(`风格锚「${name}」已入库——下方点选即挂载`, 'ok');
+    document.getElementById('style-ref-name').value = '';
+    await loadStyleAnchors();
+  } else {
+    toast('上传失败：' + (d.detail || r.status), 'bad');
+  }
+  input.value = '';
 }
 
 // ---- 角色模式（立绘生成：复用编译审核链路，atype 锁角色轴） ----
@@ -1184,7 +1327,7 @@ function collectCharSpec() {
   if (!name) { toast('角色名必填（= 库内组织名 = 拍板发布名）', 'bad'); return null; }
   const desc = document.getElementById('c-desc').value.trim();
   if (!desc) { toast('角色描述必填（外貌/服装/气质一句话）', 'bad'); return null; }
-  return {
+  const spec = {
     subject: name,
     asset_name: name,
     asset_suffix_key: 'none',   // 首张立绘：主名即文件名；后缀迭代走场景表单或精修
@@ -1200,6 +1343,9 @@ function collectCharSpec() {
       free_text_negative: document.getElementById('c-fneg').value.trim(),
     },
   };
+  const refs = selectedRefs(charStyleRefSel);
+  if (refs.length) spec.ref_images = refs;
+  return spec;
 }
 async function submitCharJob() {
   const spec = collectCharSpec();
@@ -1386,7 +1532,9 @@ loadDict().then(() => {
   const goto = localStorage.getItem('ac-goto-iterate');
   if (goto) {
     localStorage.removeItem('ac-goto-iterate');
-    fillFromRun(goto);
+    loadStyleAnchors().then(() => fillFromRun(goto));   // 风格锚库先就位（回填参考图需要）
+  } else {
+    loadStyleAnchors();
   }
 });
 </script>

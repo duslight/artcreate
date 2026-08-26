@@ -13,6 +13,8 @@
 """
 import json
 import os
+import time
+from pathlib import Path
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -371,7 +373,7 @@ def api_get_anchor(name: str, request: Request, x_token: str = Header(None)):
 def api_set_anchor(name: str, request: Request, body: dict,
                    x_token: str = Header(None),
                    x_actor_id: str = Header(None), x_actor_name: str = Header(None)):
-    """body: {image_path, note?, from_candidate?}（image_path 相对仓库根）。"""
+    """body: {image_path, note?, from_candidate?, kind?}（image_path 相对仓库根）。"""
     _check_token(request, x_token)
     from . import character
     if not body.get("image_path"):
@@ -379,8 +381,51 @@ def api_set_anchor(name: str, request: Request, body: dict,
     aid = character.set_anchor(name, body["image_path"],
                                body.get("note", ""),
                                actor=_actor(x_actor_id, x_actor_name),
-                               from_candidate=body.get("from_candidate"))
+                               from_candidate=body.get("from_candidate"),
+                               kind=body.get("kind", "character"))
     return {"anchor_id": aid}
+
+
+# ---------- 风格锚（画风固化：参考图随 spec 直送生图模型） ----------
+@router.get("/api/style-anchors")
+def api_list_style_anchors(request: Request, x_token: str = Header(None)):
+    """风格锚库（表单选择器数据源）：每风格名最新一张 + 张数。"""
+    _check_token(request, x_token)
+    from . import character
+    return {"anchors": character.list_style_anchors()}
+
+
+@router.post("/api/style-anchors/upload")
+async def api_upload_style_anchor(request: Request,
+                                  x_token: str = Header(None),
+                                  x_actor_id: str = Header(None),
+                                  x_actor_name: str = Header(None)):
+    """上传本地图建风格锚。multipart/form-data: name, note?, file。
+    任意分辨率（方舟对参考图自行缩放，无需与生图尺寸一致）；png/jpg/webp。"""
+    _check_token(request, x_token)
+    from . import character
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    if not name:
+        raise HTTPException(422, "风格锚名必填")
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "filename"):
+        raise HTTPException(422, "file 必填（png/jpg/webp）")
+    suffix = Path(upload.filename).suffix.lower()
+    if suffix not in (".png", ".jpg", ".jpeg", ".webp"):
+        raise HTTPException(422, f"不支持的格式：{suffix}（png/jpg/webp）")
+    dest_dir = cfg.root / "exports" / "_style_anchors"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{name}_{int(time.time())}{suffix}"
+    content = await upload.read()
+    if not content:
+        raise HTTPException(422, "空文件")
+    dest.write_bytes(content)
+    rel = dest.relative_to(cfg.root).as_posix()
+    aid = character.set_anchor(name, rel, form.get("note") or "本地上传",
+                               actor=_actor(x_actor_id, x_actor_name),
+                               kind="style")
+    return {"anchor_id": aid, "image_path": rel}
 
 
 @router.get("/api/runs/{run_id}/consistency")

@@ -157,8 +157,15 @@ def _worker_loop():
             from .pipeline import execute_run
             _set_job(job_id, progress="编译 + L1 lint")
 
+            # ref_images 相对路径 → 仓库根绝对路径（不依赖进程 cwd；
+            # 风格锚/角色锚存的都是 exports/... 相对路径）
+            refs = spec.get("ref_images")
+            if isinstance(refs, list) and refs:
+                refs = [str(cfg.root / r) if not Path(r).is_absolute() else r
+                        for r in refs]
+
             # 执行体内部 print 输出对 web 无意义，但保留（本地 serve 可见日志）
-            manifest = execute_run(spec, spec.get("ref_images"), actor=actor)
+            manifest = execute_run(spec, refs, actor=actor)
             if manifest is None:
                 _set_job(job_id, status="error",
                          error="L1 lint 拦截（block 级问题，未产生费用）",
