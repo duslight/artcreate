@@ -184,9 +184,26 @@
       <div id="review-prompt-zh" style="font-size:12px;color:var(--txt);line-height:1.7"></div>
       <div id="review-prompt" style="font-size:11px;color:var(--dim);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);word-break:break-all"></div>
     </div></details>
-  <div style="display:flex;gap:8px;margin-top:12px">
+
+  <!-- 精修模式：改中文段 → 英文段同步重译 → 重组直送（2026-08-26 方案1+同步翻译） -->
+  <div id="refine-zone" style="display:none;margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span style="color:var(--acc);font-size:13px;font-weight:600">精修模式</span>
+      <span style="color:var(--dim);font-size:11px">改下面的中文 → 点「同步翻译」→ 被改段的英文自动重译 → 重组完整 prompt</span>
+    </div>
+    <div id="refine-segs"></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <button class="go" style="margin-top:0" onclick="doRetranslate()" id="refine-sync-btn">同步翻译</button>
+      <span id="refine-status" style="font-size:11px;color:var(--dim)"></span>
+    </div>
+    <div style="font-size:12px;color:var(--dim);margin:10px 0 4px">重组后完整 prompt（确认生成 = 按此直送）</div>
+    <div id="refine-final" style="background:#191b1e;border:1px solid var(--acc);border-radius:6px;padding:8px 10px;font-size:11px;word-break:break-all;color:var(--txt)"></div>
+  </div>
+
+  <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
     <button class="go" onclick="confirmCompile()">确认生成（按此编译执行）</button>
     <button onclick="closeReview()">回去修改</button>
+    <button id="refine-toggle" onclick="toggleRefine()">精修模式…</button>
   </div>
 </div>
 
@@ -493,6 +510,140 @@ function renderReviewCard(d) {
 function closeReview() {
   document.getElementById('review-card').style.display = 'none';
   pendingSpec = null;
+  refineOn = false;
+  document.getElementById('refine-zone').style.display = 'none';
+  document.getElementById('refine-toggle').textContent = '精修模式…';
+}
+
+// ---- 精修模式：分段编辑 + 同步重译 + 重组（2026-08-26 方案1）----
+// 可编辑段定义：key 对应 compiler segments 键；has_zh=有中文原文（用户输入），
+// 否则给"中文重述"框（LLM 编译段无中文源）。字典段（画风/prefix/氛围注入）不开放。
+let refineOn = false;
+const REFINE_KEYS = [
+  { key: 'scene_core_en',      label: '主体描述', has_zh: true },
+  { key: 'scene_expansion',    label: '扩写元素', has_zh: false },
+  { key: 'atmosphere_notes',   label: '氛围注记', has_zh: false },
+  { key: 'free_constraints_en',label: '正向约束', has_zh: true },
+  { key: 'free_negative_en',   label: '负向排除', has_zh: true, neg: true },
+];
+let refineSegs = {};   // key -> {zh, en, orig_en, orig_zh}
+function toggleRefine() {
+  refineOn = !refineOn;
+  const zone = document.getElementById('refine-zone');
+  const btn = document.getElementById('refine-toggle');
+  zone.style.display = refineOn ? '' : 'none';
+  btn.textContent = refineOn ? '收起精修' : '精修模式…';
+  if (refineOn) buildRefineSegs();
+}
+function buildRefineSegs() {
+  const segs = (pendingSpec && pendingSpec.compiled_segments) || {};
+  const cons = (pendingSpec && pendingSpec.constraints) || {};
+  // 中文原文源：用户表单输入（描述/自由约束/负向约束）
+  const zhSource = {
+    scene_core_en: pendingSpec ? pendingSpec.description : '',
+    free_constraints_en: cons.free_text || '',
+    free_negative_en: (cons.free_text_negative || '').replace(/^不要出现?/, '').replace(/^不要/, ''),
+  };
+  refineSegs = {};
+  const box = document.getElementById('refine-segs');
+  box.innerHTML = REFINE_KEYS.map(r => {
+    const en = segs[r.key] || '';
+    if (!en && !(Array.isArray(segs[r.key]))) { /* 空段也显示，可填入新内容 */ }
+    const zh = zhSource[r.key] || '';
+    refineSegs[r.key] = { zh, en: r.neg ? String(segs.free_negative_en || '') : String(en),
+                          orig_en: String(en), orig_zh: zh, neg: !!r.neg };
+    const ph = r.has_zh ? '改这里的中文名词/描述' : '用中文重述你想要的元素（选填，留空=保留原段）';
+    return `
+    <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px">
+      <span style="min-width:64px;color:var(--dim);font-size:12px;padding-top:7px">${r.label}</span>
+      <div style="flex:1">
+        <input type="text" id="rz-${r.key}" value="${zh.replace(/"/g, '&quot;')}"
+               placeholder="${ph}" style="font-size:13px;padding:5px 8px"
+               oninput="refineSegs['${r.key}'].zh = this.value">
+        <div id="re-${r.key}" style="font-size:11px;color:${r.neg ? 'var(--bad)' : 'var(--ok)'};margin-top:2px;word-break:break-all">
+          ${r.neg ? 'Strictly avoid: ' : ''}${r.neg ? String(segs.free_negative_en || '') : en || '（空段，填中文后同步可生成）'}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  renderRefineFinal();
+}
+async function doRetranslate() {
+  // 收集被改段（zh 与原 zh 不同，或无中文源但填了重述）
+  const items = [];
+  for (const r of REFINE_KEYS) {
+    const s = refineSegs[r.key];
+    if (!s) continue;
+    const changed = r.has_zh ? (s.zh && s.zh !== s.orig_zh)
+                             : (s.zh && s.zh.trim());   // 重述段：填了就算
+    if (changed) items.push({ key: r.key, zh: s.zh });
+  }
+  if (!items.length) {
+    document.getElementById('refine-status').textContent = '没有检测到修改（改上面分段的中文字段）';
+    return;
+  }
+  const btn = document.getElementById('refine-sync-btn');
+  btn.disabled = true; btn.textContent = '重译中…';
+  document.getElementById('refine-status').textContent = '';
+  try {
+    const resp = await fetch('/api/retranslate', {
+      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+      body: JSON.stringify({ items }),
+    });
+    const d = await resp.json();
+    if (resp.status !== 200) {
+      document.getElementById('refine-status').textContent =
+        '重译失败：' + (d.detail || JSON.stringify(d));
+      return;
+    }
+    for (const [key, en] of Object.entries(d.translations || {})) {
+      if (!refineSegs[key]) continue;
+      refineSegs[key].en = en;
+      const line = document.getElementById('re-' + key);
+      if (line) line.textContent = (refineSegs[key].neg ? 'Strictly avoid: ' : '') + en;
+    }
+    renderRefineFinal();
+    document.getElementById('refine-status').textContent =
+      `已同步 ${Object.keys(d.translations || {}).length} 段（未改段保持原样）`;
+  } catch (e) {
+    document.getElementById('refine-status').textContent = '重译失败：' + e;
+  } finally {
+    btn.disabled = false; btn.textContent = '同步翻译';
+  }
+}
+function renderRefineFinal() {
+  // 按 compiler 原拼装顺序重组：prefix → core → expansion → mood → atmosphere
+  // → extra → positives → free_cons → style_suffix → 排除块句
+  const segs = (pendingSpec && pendingSpec.compiled_segments) || {};
+  const g = k => (refineSegs[k] && refineSegs[k].en) || segs[k] || '';
+  const parts = [segs.media_prefix, g('scene_core_en'), g('scene_expansion'),
+                 segs.mood_inject, g('atmosphere_notes'), segs.extra_en,
+                 ...(segs.positives || []), g('free_constraints_en'),
+                 segs.style_suffix]
+    .map(p => String(p || '').trim().replace(/\.$/, ''))
+    .filter(Boolean);
+  let full = parts.join(', ');
+  // 排除块重组：轴负向（negative_block 减去旧翻译词）+ 新翻译负向 + people 兜底。
+  // 关键：旧 free_negative_en 的词要从轴负向里剥掉——否则用户删了"月亮"，
+  // 旧翻译的 moon 仍留在块里删不掉（2026-08-26 精修回归发现）。
+  const oldNeg = String(segs.free_negative_en || '').split(/[，,、]/)
+    .map(x => x.trim().toLowerCase()).filter(Boolean);
+  const axisNeg = (segs.negative_block || [])
+    .filter(n => !oldNeg.includes(String(n).toLowerCase()));
+  const newNeg = String(g('free_negative_en') || '').split(/[，,、]/)
+    .map(x => x.trim()).filter(Boolean);
+  const seen = new Set(); const dedup = [];
+  for (const n of [...axisNeg, ...newNeg]) {
+    const k = n.toLowerCase(); if (!seen.has(k)) { seen.add(k); dedup.push(n); }
+  }
+  if (!seen.has('people')) dedup.push('people');
+  if (dedup.length) full += '. Strictly avoid: ' + dedup.join(', ') + '.';
+  document.getElementById('refine-final').textContent = full;
+  // 存回 pendingSpec：确认生成走 compiled_prompt 直通
+  if (pendingSpec) {
+    pendingSpec.compiled_prompt = full;
+    pendingSpec.prompt_edited = true;
+  }
 }
 async function confirmCompile() {
   if (!pendingSpec) return;

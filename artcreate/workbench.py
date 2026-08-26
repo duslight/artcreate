@@ -114,6 +114,58 @@ def compile_preview(request: Request, spec: dict,
     }
 
 
+@router.post("/api/retranslate")
+def retranslate(request: Request, body: dict, x_token: str = Header(None)):
+    """精修模式·分段批量重译：改中文段 → 对应英文段同步。
+    body: {"items": [{"key": "scene_core_en", "zh": "雪原上的篝火营地，夜晚"},
+                      {"key": "free_negative_en", "zh": "月亮、雾气"}]}
+    返回 {"translations": {"scene_core_en": "...", ...}}
+    规则：
+    - scene_core_en / scene_expansion / atmosphere_notes / free_constraints_en
+      → 忠实翻译（只译不加）
+    - free_negative_en → 裸名词短语（无否定词，编译期再进排除块重组去重）
+    单次 LLM 调用批量完成（省时省钱）；LLM 失败返回 503 由前端提示。"""
+    _check_token(request, x_token)
+    items = body.get("items") or []
+    if not items:
+        return {"translations": {}}
+    allowed = {"scene_core_en", "scene_expansion", "atmosphere_notes",
+               "free_constraints_en", "free_negative_en"}
+    tasks = [{"key": it["key"], "zh": str(it.get("zh", "")).strip()}
+             for it in items if it.get("key") in allowed and str(it.get("zh", "")).strip()]
+    if not tasks:
+        return {"translations": {}}
+    from .tools.llm_client import text_chat
+    spec_lines = "\n".join(
+        f'{t["key"]}: {t["zh"]}' for t in tasks)
+    meta = (
+        "Translate the following Chinese prompt segments into ENGLISH for an "
+        "image model. Output STRICT JSON only: an object mapping each segment "
+        "key to its English translation.\n"
+        "Rules per key:\n"
+        "- scene_core_en / free_constraints_en: faithful translation only, "
+        "do NOT add or remove content.\n"
+        "- scene_expansion / atmosphere_notes: comma-separated short noun "
+        "phrases, each under 6 words.\n"
+        "- free_negative_en: bare noun phrases WITHOUT any negation words "
+        "(e.g. 月亮、雾气 → moon, mist).\n"
+        "- Keep every phrase under 8 words. No style words, no lighting words.\n\n"
+        "Segments:\n" + spec_lines)
+    try:
+        raw = text_chat(meta, temperature=0.2)
+        import re as _re
+        m = _re.search(r"\{.*\}", raw, _re.S)
+        parsed = json.loads(m.group(0)) if m else {}
+    except Exception as e:
+        raise HTTPException(503, f"重译失败（LLM 通道异常）：{e}")
+    out = {t["key"]: str(parsed.get(t["key"], "")).strip()
+           for t in tasks if str(parsed.get(t["key"], "")).strip()}
+    missing = [t["key"] for t in tasks if t["key"] not in out]
+    if missing:
+        raise HTTPException(502, f"LLM 未返回分段：{missing}")
+    return {"translations": out}
+
+
 @router.post("/api/jobs")
 def create_job(request: Request, spec: dict,
                x_token: str = Header(None),
