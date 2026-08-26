@@ -265,7 +265,8 @@ def cmd_reject(subject: str, run_id: str, idx: int, code: str = "manual"):
 
 def main():
     ap = argparse.ArgumentParser(prog="artcreate")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    ap.add_argument("--version", action="store_true", help="显示版本号并退出")
+    sub = ap.add_subparsers(dest="cmd")
     for name in ("run", "compile", "lint"):
         p = sub.add_parser(name)
         p.add_argument("spec", help="spec yaml 路径")
@@ -300,6 +301,8 @@ def main():
 
     p = sub.add_parser("serve")
     p.add_argument("--port", type=int, default=8870)
+    p.add_argument("--host", default="127.0.0.1",
+                   help="监听地址（服务器部署用 0.0.0.0，配 nginx/令牌使用）")
 
     p = sub.add_parser("regenerate")
     p.add_argument("subject")
@@ -332,6 +335,15 @@ def main():
     p.add_argument("run_id", nargs="?", default=None)
 
     args = ap.parse_args()
+    if args.version:
+        try:
+            from . import __version__
+        except ImportError:
+            from artcreate import __version__
+        print(f"artcreate {__version__}")
+        return
+    if not args.cmd:
+        ap.error("the following arguments are required: cmd")
     if args.cmd == "run":
         cmd_run(args.spec)
     elif args.cmd == "compile":
@@ -353,8 +365,8 @@ def main():
         print(format_stats(args.subject))
     elif args.cmd == "serve":
         from artcreate.server import serve
-        print(f"评审视图：http://127.0.0.1:{args.port}")
-        serve(args.port)
+        print(f"评审视图：http://{args.host}:{args.port}")
+        serve(args.port, host=args.host)
     elif args.cmd == "regenerate":
         cmd_regenerate(args.subject, args.run_id)
     elif args.cmd == "distill":

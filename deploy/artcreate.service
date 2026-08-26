@@ -1,0 +1,25 @@
+[Unit]
+Description=artcreate 1.0 workbench (FastAPI + worker)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 按实际部署路径修改（示例：/opt/artcreate）
+WorkingDirectory=/opt/artcreate
+ExecStart=/opt/artcreate/.venv/bin/python -m artcreate serve --host 0.0.0.0 --port 8870
+Restart=on-failure
+RestartSec=5
+
+# 环境变量：密钥走 .env（python-dotenv 自动加载 WorkingDirectory 下 .env），
+# 也可用 EnvironmentFile 指定：EnvironmentFile=/opt/artcreate/.env
+# WORKBENCH_TOKEN 必须配置（服务绑定 0.0.0.0 后令牌是唯一防线）
+Environment=WORKBENCH_TOKEN=CHANGE_ME
+
+# 输出
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=artcreate
+
+[Install]
+WantedBy=multi-user.target

@@ -124,6 +124,6 @@ STATIC_DIR = Path(__file__).parent / "web"
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="web")
 
 
-def serve(port: int = 8870):
+def serve(port: int = 8870, host: str = "127.0.0.1"):
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=port)
+    uvicorn.run(app, host=host, port=port)

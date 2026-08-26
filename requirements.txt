@@ -3,3 +3,5 @@ opencv-python-headless>=4.9
 numpy>=1.26
 perfect-pixel>=0.1
 python-dotenv>=1.0
+fastapi>=0.110
+uvicorn>=0.29
