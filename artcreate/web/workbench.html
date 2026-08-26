@@ -189,9 +189,25 @@
   <div id="refine-zone" style="display:none;margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
       <span style="color:var(--acc);font-size:13px;font-weight:600">精修模式</span>
-      <span style="color:var(--dim);font-size:11px">改下面的中文 → 点「同步翻译」→ 被改段的英文自动重译 → 重组完整 prompt</span>
+      <!-- 双模式切换：分段=精准改一处 / 整段=对完整中文直接改（不猜模板映射） -->
+      <span class="axis">
+        <span class="opt on" id="rmode-seg" onclick="setRefineMode('seg')">分段精修</span>
+        <span class="opt" id="rmode-full" onclick="setRefineMode('full')" style="margin-left:4px">整段直改</span>
+      </span>
     </div>
-    <div id="refine-segs"></div>
+
+    <!-- 分段视图 -->
+    <div id="refine-seg-view">
+      <div style="color:var(--dim);font-size:11px;margin-bottom:6px">改下面的中文 → 点「同步翻译」→ 被改段的英文自动重译 → 重组完整 prompt</div>
+      <div id="refine-segs"></div>
+    </div>
+
+    <!-- 整段直改视图：对着完整中文 prompt 改，不关心模板约束→英文的映射 -->
+    <div id="refine-full-view" style="display:none">
+      <div style="color:var(--dim);font-size:11px;margin-bottom:6px">直接改完整中文 prompt（含画风/氛围/排除句的中文译文）→ 点「同步翻译」→ 只重译你改的部分，未改部分英文原样保留</div>
+      <textarea id="refine-full-zh" style="min-height:110px;font-size:13px;line-height:1.7" oninput="markFullDirty()"></textarea>
+    </div>
+
     <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
       <button class="go" style="margin-top:0" onclick="doRetranslate()" id="refine-sync-btn">同步翻译</button>
       <span id="refine-status" style="font-size:11px;color:var(--dim)"></span>
@@ -486,6 +502,7 @@ async function submitJob() {
     pendingSpec = spec;
     pendingSpec.compiled_prompt = d.prompt;
     pendingSpec.compiled_segments = d.segments;
+    pendingSpec.compiled_prompt_zh = d.prompt_zh || '';   // 整段直改模式的中文底稿
     renderReviewCard(d);
   } catch (e) {
     alert('编译预览失败：' + e);
@@ -532,14 +549,36 @@ const REFINE_KEYS = [
   { key: 'free_negative_en',   label: '负向排除', has_zh: true, neg: true },
 ];
 let refineSegs = {};   // key -> {zh, en, orig_en, orig_zh}
+let refineMode = 'seg';        // 'seg' 分段精修 | 'full' 整段直改
+let refineFull = { orig_zh: '', orig_en: '', dirty: false };   // 整段模式状态
 function toggleRefine() {
   refineOn = !refineOn;
   const zone = document.getElementById('refine-zone');
   const btn = document.getElementById('refine-toggle');
   zone.style.display = refineOn ? '' : 'none';
   btn.textContent = refineOn ? '收起精修' : '精修模式…';
-  if (refineOn) buildRefineSegs();
+  if (refineOn) {
+    buildRefineSegs();
+    buildRefineFull();
+  }
 }
+function setRefineMode(m) {
+  refineMode = m;
+  document.getElementById('rmode-seg').classList.toggle('on', m === 'seg');
+  document.getElementById('rmode-full').classList.toggle('on', m === 'full');
+  document.getElementById('refine-seg-view').style.display = m === 'seg' ? '' : 'none';
+  document.getElementById('refine-full-view').style.display = m === 'full' ? '' : 'none';
+}
+function buildRefineFull() {
+  // 整段直改底稿：编译返回的完整中文翻译 + 对应英文原文
+  refineFull.orig_zh = (pendingSpec && pendingSpec.compiled_prompt_zh) || '';
+  refineFull.orig_en = (pendingSpec && pendingSpec.compiled_prompt) || '';
+  refineFull.dirty = false;
+  const ta = document.getElementById('refine-full-zh');
+  ta.value = refineFull.orig_zh;
+  renderRefineFinal();
+}
+function markFullDirty() { refineFull.dirty = true; }
 function buildRefineSegs() {
   const segs = (pendingSpec && pendingSpec.compiled_segments) || {};
   const cons = (pendingSpec && pendingSpec.constraints) || {};
@@ -574,6 +613,7 @@ function buildRefineSegs() {
   renderRefineFinal();
 }
 async function doRetranslate() {
+  if (refineMode === 'full') return doRetranslateFull();
   // 收集被改段（zh 与原 zh 不同，或无中文源但填了重述）
   const items = [];
   for (const r of REFINE_KEYS) {
@@ -616,8 +656,57 @@ async function doRetranslate() {
     btn.disabled = false; btn.textContent = '同步翻译';
   }
 }
+async function doRetranslateFull() {
+  // 整段直改：三元组对齐重译（改了的部分重译，未改部分抄原英文）
+  const edited_zh = document.getElementById('refine-full-zh').value.trim();
+  if (!edited_zh) {
+    document.getElementById('refine-status').textContent = '中文 prompt 为空';
+    return;
+  }
+  if (edited_zh === refineFull.orig_zh) {
+    document.getElementById('refine-status').textContent = '没有检测到修改（直接改上方中文全文）';
+    return;
+  }
+  const btn = document.getElementById('refine-sync-btn');
+  btn.disabled = true; btn.textContent = '对齐重译中…';
+  document.getElementById('refine-status').textContent = '';
+  try {
+    const resp = await fetch('/api/retranslate-full', {
+      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+      body: JSON.stringify({ orig_zh: refineFull.orig_zh,
+                             orig_en: refineFull.orig_en,
+                             edited_zh }),
+    });
+    const d = await resp.json();
+    if (resp.status !== 200) {
+      document.getElementById('refine-status').textContent =
+        '重译失败：' + (d.detail || JSON.stringify(d));
+      return;
+    }
+    refineFull.orig_en = d.en;    // 结果作为新底稿（可继续改继续同步）
+    refineFull.orig_zh = edited_zh;
+    refineFull.dirty = false;
+    renderRefineFinal();
+    document.getElementById('refine-status').textContent =
+      '已同步（未改部分英文原样保留）';
+  } catch (e) {
+    document.getElementById('refine-status').textContent = '重译失败：' + e;
+  } finally {
+    btn.disabled = false; btn.textContent = '同步翻译';
+  }
+}
 function renderRefineFinal() {
-  // 按 compiler 原拼装顺序重组：prefix → core → expansion → mood → atmosphere
+  // 整段直改模式：最终英文 = 最近一次对齐结果（orig_en 随同步更新）
+  if (refineMode === 'full') {
+    const full = refineFull.orig_en;
+    document.getElementById('refine-final').textContent = full;
+    if (pendingSpec && full) {
+      pendingSpec.compiled_prompt = full;
+      pendingSpec.prompt_edited = true;
+    }
+    return;
+  }
+  // 分段模式：按 compiler 原拼装顺序重组：prefix → core → expansion → mood → atmosphere
   // → extra → positives → free_cons → style_suffix → 排除块句
   const segs = (pendingSpec && pendingSpec.compiled_segments) || {};
   const g = k => (refineSegs[k] && refineSegs[k].en) || segs[k] || '';

@@ -166,6 +166,61 @@ def retranslate(request: Request, body: dict, x_token: str = Header(None)):
     return {"translations": out}
 
 
+@router.post("/api/retranslate-full")
+def retranslate_full(request: Request, body: dict, x_token: str = Header(None)):
+    """精修模式·整段直改：用户改完整中文 prompt → 对齐改写英文全文。
+    body: {"orig_zh": 原中文全文, "orig_en": 原英文全文, "edited_zh": 改后中文全文}
+    返回 {"en": 新英文全文}
+    对齐规则（防 LLM 擅自润色导致全篇漂移）：
+    - 逐句对齐：改动部分重译；未改部分直接抄原英文（不再翻译）
+    - 专有名词（Dead Cells 等）与固定句式（Strictly avoid: ...）原样保形
+    - 用户不知道模板约束→英文映射也能改：改的就是中文全文本身"""
+    _check_token(request, x_token)
+    orig_zh = str(body.get("orig_zh") or "").strip()
+    orig_en = str(body.get("orig_en") or "").strip()
+    edited_zh = str(body.get("edited_zh") or "").strip()
+    if not (orig_zh and orig_en and edited_zh):
+        raise HTTPException(422, "orig_zh / orig_en / edited_zh 均必填")
+    if edited_zh == orig_zh:
+        return {"en": orig_en}
+    from .tools.llm_client import text_chat
+    meta = (
+        "You are aligning two versions of an image prompt. This is an "
+        "IN-PLACE EDIT, not an append.\n"
+        "ORIGINAL Chinese prompt:\n" + orig_zh + "\n\n"
+        "ORIGINAL English prompt (its translation):\n" + orig_en + "\n\n"
+        "EDITED Chinese prompt (the user revised the Chinese IN PLACE — some "
+        "phrases were replaced, added or deleted at their original positions):\n"
+        + edited_zh + "\n\n"
+        "Task: output the EDITED English prompt — same structure and length "
+        "as the ORIGINAL English, with ONLY the changed parts updated.\n"
+        "Rules:\n"
+        "- CRITICAL: do NOT append the translated changes at the end. Locate "
+        "the changed phrase's position in the original and REPLACE it there. "
+        "The output must NOT contain both the old and the new version of a "
+        "phrase.\n"
+        "- The output length must stay close to the original English length "
+        "(±20%). If your output is much longer, you appended instead of "
+        "replacing.\n"
+        "- For parts the user did NOT change, copy the original English "
+        "VERBATIM (do not re-translate, do not rephrase, do not 'improve').\n"
+        "- Keep proper nouns exactly as-is (e.g. Dead Cells, Blasphemous).\n"
+        "- Keep structural formulas verbatim, e.g. the trailing exclusion "
+        "sentence 'Strictly avoid: a, b, c.' — update its noun list only if "
+        "the user changed it, and keep it at the very end.\n"
+        "- Keep the comma-separated prompt format. No explanations, no "
+        "quotes, no markdown.\n"
+        "Output the edited English prompt ONLY.")
+    try:
+        raw = text_chat(meta, temperature=0.2)
+    except Exception as e:
+        raise HTTPException(503, f"整段重译失败（LLM 通道异常）：{e}")
+    en = raw.strip().strip('"').strip("`").strip()
+    if not en:
+        raise HTTPException(502, "LLM 返回为空")
+    return {"en": en}
+
+
 @router.post("/api/jobs")
 def create_job(request: Request, spec: dict,
                x_token: str = Header(None),
