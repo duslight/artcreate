@@ -76,6 +76,33 @@ def form_dict(request: Request, x_token: str = Header(None)):
 
 
 # ---------- 任务 ----------
+@router.post("/api/compile-preview")
+def compile_preview(request: Request, spec: dict,
+                    x_token: str = Header(None),
+                    x_actor_id: str = Header(None), x_actor_name: str = Header(None)):
+    """编译预览（位置A 人工审核）：同步编译返回 prompt + explain 分段 + lint 警告。
+    不调生图 API、不产生生图费用（仅 LLM 编译，几秒/几厘钱）。
+    用户确认后带 compiled_prompt 入队 = 所见即所执行。"""
+    _check_token(request, x_token)
+    from .tools.compiler import compile_prompt
+    from .gates.lint import lint_spec
+    from .explain import explain_spec
+    issues = validate_spec(spec)
+    errors = [i for i in issues if i["level"] == "error"]
+    if errors:
+        raise HTTPException(422, {"issues": issues,
+                                  "message": format_issues(issues)})
+    result = compile_prompt(spec)
+    warnings = lint_spec(spec, result["prompt"])
+    return {
+        "prompt": result["prompt"],
+        "segments": result["segments"],
+        "explain": explain_spec(spec),
+        "lint": warnings,
+        "spec_issues": [i for i in issues if i["level"] == "warn"],
+    }
+
+
 @router.post("/api/jobs")
 def create_job(request: Request, spec: dict,
                x_token: str = Header(None),

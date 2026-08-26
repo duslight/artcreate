@@ -22,13 +22,15 @@ Context you MUST respect (expansion must not contradict any of them):
 - Art style direction: {style_hint}
 - Elements to EXCLUDE (never mention them, not even to negate): {exclusions}
 - Free-text constraints to translate: {free_constraints}
+- Negative free-text constraints (translate for the exclusion block): {free_negative}
 
 Output STRICT JSON only, with these keys:
 1. "scene_core_en": faithful ENGLISH translation of the scene description. Translate only, do NOT add or remove content.
-2. "scene_expansion": 3-6 concrete visual NOUN-phrases (furniture, objects, materials, architecture) that naturally belong to the scene, consistent with the mood, the extra detail request and the style. Comma separated. No verbs of people, no story. Never mention people. Never include anything from the EXCLUDE list.
+2. "scene_expansion": 3-6 concrete visual NOUN-phrases (furniture, objects, materials, architecture) that naturally belong to the scene, consistent with the mood, the extra detail request and the style. Comma separated. No verbs of people, no story. Never mention people. Never include anything from the EXCLUDE list or the negative constraints.
 3. "atmosphere_notes": 1-2 short phrases about stillness/quiet unease/restrained mood (e.g. "faint drifting dust", "unnatural stillness").
 4. "extra_en": faithful ENGLISH translation of the extra detail request. Empty string if none.
 5. "constraints_en": faithful ENGLISH translation of the free-text constraints (things to avoid or enforce). Empty string if none.
+6. "negative_en": faithful ENGLISH translation of the negative free-text constraints, as bare noun phrases WITHOUT negation words (e.g. "不要蜘蛛" → "spiders"). Empty string if none.
 
 Rules:
 - Keep every phrase under 8 words.
@@ -77,13 +79,14 @@ def compile_prompt(spec: dict) -> dict:
     art_style = spec.get("art_style", d["art_style"])
     cons_form = spec.get("constraints") or {}
     free_constraints = str(cons_form.get("free_text") or "").strip()
+    free_negative = str(cons_form.get("free_text_negative") or "").strip()
 
     style = cfg.art_styles.get(art_style) or cfg.art_styles[d["art_style"]]
     mood_inject = cfg.moods.get(mood, {}).get("inject", "")
     negatives, positives = resolve_constraints(spec)
     asset_conf = cfg.asset_types.get(asset_type) or cfg.asset_types[d["asset_type"]]
 
-    core_en, expansion, atmosphere, extra_en, cons_en = "", "", "", "", ""
+    core_en, expansion, atmosphere, extra_en, cons_en, neg_en = "", "", "", "", "", ""
     try:
         prompt = (META_PROMPT
                   .replace("{description}", desc)
@@ -94,7 +97,9 @@ def compile_prompt(spec: dict) -> dict:
                   .replace("{exclusions}",
                            ", ".join(negatives) if negatives else "(none)")
                   .replace("{free_constraints}",
-                           free_constraints or "(none)"))
+                           free_constraints or "(none)")
+                  .replace("{free_negative}",
+                           free_negative or "(none)"))
         raw = text_chat(prompt)
         m = re.search(r"\{.*\}", raw, re.S)
         if m:
@@ -104,6 +109,7 @@ def compile_prompt(spec: dict) -> dict:
             atmosphere = (parsed.get("atmosphere_notes", "") or "").strip()
             extra_en = (parsed.get("extra_en", "") or "").strip()
             cons_en = (parsed.get("constraints_en", "") or "").strip()
+            neg_en = (parsed.get("negative_en", "") or "").strip()
     except Exception:
         pass  # 编译降级不报错（v1 行为：中文直通）
 
@@ -122,6 +128,12 @@ def compile_prompt(spec: dict) -> dict:
         neg_items.append("— " + cons_en)
     elif free_constraints:
         neg_items.append("— " + free_constraints)
+    # 负向自由约束：翻译为裸名词短语，直接并入排除子句
+    # （strictly no 块是模型安全例外区，这里否定不触发粉红大象反向激活）
+    if neg_en:
+        neg_items.append(neg_en)
+    elif free_negative:
+        neg_items.append(free_negative)   # LLM 失败降级：中文直通
     parts.append("strictly no " + ", ".join(neg_items))
 
     parts.append(style["suffix"])
@@ -137,6 +149,7 @@ def compile_prompt(spec: dict) -> dict:
             "atmosphere_notes": atmosphere,
             "extra_en": extra_en or extra,
             "positives": positives,
+            "free_negative_en": neg_en or free_negative,
             "negative_block": neg_items,
             "style_suffix": style["suffix"],
         },

@@ -38,15 +38,17 @@ def lint_spec(spec: dict, compiled_prompt: str = "", art_style: str = ""):
                          "fix": None})
 
     # 2. 负向注入扫描（自由约束文本是重灾区；描述里的否定交给编译器语义处理）
+    #    注意：constraints.free_text_negative（负向自由约束）不扫——
+    #    它本来就该写否定，编译时直通 strictly no 排除子句（正确用法）
     for text, field in ((free_text, "自由约束"), (extra, "细化项")):
         for pattern, lang in NEGATION_PATTERNS:
             m = pattern.search(text)
             if m:
                 matched = m.group(0)
                 if lang == "zh":
-                    fix = f"改用约束合集对应轴（如'无水体'轴），或写正向表述：描述'应该是什么'（例：'干涸开裂的河床'）"
+                    fix = f"改用约束合集对应轴（如'无水体'轴）或下方'负向自由约束'栏，或写正向表述：描述'应该是什么'（例：'干涸开裂的河床'）"
                 else:
-                    fix = "Use positive phrasing: describe what SHOULD be there instead"
+                    fix = "Use positive phrasing: describe what SHOULD be there instead, or move it to the negative constraints field"
                 warnings.append({
                     "level": "warn", "code": "NEGATION_INJECTION",
                     "message": f"{field}含否定表述\"{matched}\"：生成模型不理解否定，"

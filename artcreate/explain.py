@@ -68,6 +68,20 @@ def explain_spec(spec: dict) -> list:
         out.append({"section": "自由约束（LLM 编译）", "zh": f"你写的：{free}",
                     "en": "（由 LLM 实时编译为英文）"})
 
+    # 5.5 负向自由约束（编译进 strictly no 排除子句，非正向注入）
+    free_neg = cons.get("free_text_negative")
+    if free_neg:
+        seg_en = "（由 LLM 编译为英文名词短语，进 strictly no 排除块）"
+        # 若 spec 携带编译分段（审核直通场景），用真实编译结果
+        segs = spec.get("_compiled_segments") or {}
+        if segs.get("free_negative_en"):
+            seg_en = "strictly no " + segs["free_negative_en"]
+        out.append({"section": "负向约束（排除块）",
+                    "zh": f"你要求排除的：{free_neg} → 编译为排除名词，进入"
+                          f"「strictly no」子句（模型对排除块的否定不反向激活，"
+                          f"粉红大象问题只发生在正向描述段）",
+                    "en": seg_en})
+
     # 6. 画风
     st = spec.get("art_style")
     if st and st in cfg.art_styles:

@@ -16,8 +16,9 @@ TOP_FIELDS = {
     "asset_type", "mood", "art_style", "size", "count",
     "ref_images", "constraints", "parent_run", "character",
     "asset_name", "asset_suffix_key",
+    "compiled_prompt", "compiled_segments",   # 审核直通（位置A：所见即所执行）
 }
-CONSTRAINTS_FIELDS = {"axis_sel", "free_text"}
+CONSTRAINTS_FIELDS = {"axis_sel", "free_text", "free_text_negative"}
 
 
 def validate_spec(spec: dict, strict: bool = False) -> list:

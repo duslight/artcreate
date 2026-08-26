@@ -24,9 +24,17 @@ def execute_run(spec: dict, refs=None, actor: dict = None):
     count = spec.get("count", d["count"])
     cfg.validate_size(size, with_ref=bool(refs))
 
-    result = compile_prompt(spec)
-    print("=== 编译产物 ===")
-    print(result["prompt"][:300] + ("..." if len(result["prompt"]) > 300 else ""))
+    # 编译：审核直通（spec 带 compiled_prompt=用户已在中英审核卡确认过的编译结果，
+    # 跳过重编译杜绝"审核的和执行的不一致"——LLM 重新编译有随机性）
+    if spec.get("compiled_prompt"):
+        result = {"prompt": spec["compiled_prompt"],
+                  "segments": spec.get("compiled_segments") or {}}
+        print("=== 编译产物（审核直通，跳过重编译）===")
+        print(result["prompt"][:300] + ("..." if len(result["prompt"]) > 300 else ""))
+    else:
+        result = compile_prompt(spec)
+        print("=== 编译产物 ===")
+        print(result["prompt"][:300] + ("..." if len(result["prompt"]) > 300 else ""))
 
     warnings = lint_spec(spec, result["prompt"])
     print("\n=== L1 lint ===")
