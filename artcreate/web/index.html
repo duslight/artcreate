@@ -128,10 +128,37 @@ function render(d) {
   m.innerHTML = `
     <div><b>${d.run.subject}</b> · ${d.run.run_id} · rev${d.run.revision} · ${d.run.size}
       <button onclick="showLineage()" style="margin-left:8px">迭代链</button>
-      <button onclick="regen()" style="margin-left:4px">再生一批</button></div>
+      <button onclick="regen()" style="margin-left:4px">再生一批</button>
+      <button onclick="loadThisRun()" style="margin-left:4px">载入迭代</button></div>
     <div class="prompt">${d.run.prompt}</div>
+    <div id="explain-panel" style="display:none;background:#191b1e;border:1px solid var(--line);border-radius:6px;padding:10px;font-size:12px;margin-top:8px;max-height:260px;overflow:auto"></div>
+    <div style="margin-top:6px"><button onclick="toggleExplain()">编译对照（中文全貌）</button></div>
     <div id="lineage"></div>
     <div class="grid">${cards}</div>`;
+}
+let explainLoaded = false;
+function toggleExplain() {
+  const p = document.getElementById('explain-panel');
+  p.style.display = p.style.display === 'none' ? '' : 'none';
+  if (!explainLoaded && p.style.display !== 'none') loadExplain();
+}
+async function loadExplain() {
+  const r = await fetch(`/api/spec/${curRun}`, {headers:H()});
+  if (!r.ok) return;
+  const d = await r.json();
+  const p = document.getElementById('explain-panel');
+  p.innerHTML = (d.explain || []).map(s => `
+    <div style="margin-bottom:8px">
+      <div style="color:var(--acc)">【${s.section}】</div>
+      <div>${s.zh}</div>
+      <div style="color:var(--dim);font-size:11px;margin-top:2px;word-break:break-all">${s.en}</div>
+    </div>`).join('') || '<div style="color:var(--dim)">（无可解释分段）</div>';
+  explainLoaded = true;
+}
+function loadThisRun() {
+  // 载入迭代：跳工作台并带上 run id
+  localStorage.setItem('ac-goto-iterate', curRun);
+  location.href = '/workbench.html';
 }
 
 async function regen() {

@@ -57,6 +57,7 @@ def form_dict(request: Request, x_token: str = Header(None)):
             item["source"] = src_map.get((ax["id"], o.get("id")), "base")
             opts.append(item)
         axes.append({"id": ax["id"], "label": ax.get("label", ax["id"]),
+                     "desc": ax.get("desc", ""),
                      "non_promotable": bool(ax.get("non_promotable")),
                      "options": opts})
     return {

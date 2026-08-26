@@ -134,7 +134,9 @@ def get_spec(run_id: str):
                        (run_id,)).fetchone()
     if not row:
         raise HTTPException(404)
-    return {"spec": json.loads(row["spec"]), "prompt": row["prompt"]}
+    from .explain import explain_spec
+    return {"spec": json.loads(row["spec"]), "prompt": row["prompt"],
+            "explain": explain_spec(json.loads(row["spec"]))}
 
 
 # 静态评审页

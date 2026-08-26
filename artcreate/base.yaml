@@ -102,47 +102,63 @@ moods:
 constraint_axes:
   - id: human_trace
     label: "人工痕迹"
+    desc: "画面里是否出现人造物（建筑/道路/桥梁/机械等）"
     options:
       - { id: any,      label: "不限" }
       - { id: natural,  label: "完全自然",
           negative: [bridges, roads, buildings, fences, farmland, ships, machinery],
           positive: [pristine untouched wilderness],
+          zh: { negative: ["桥梁", "道路", "建筑", "栅栏", "农田", "船舶", "机械"],
+                positive: ["原始未触动的荒野"] },
           verify_question: "画面中是否完全没有人工建筑/道路/桥梁等人造物？" }
       - { id: present,  label: "有人工痕迹",
           positive: [weathered man-made structures, worn stone paths],
+          zh: { positive: ["风化的人造结构", "磨损的石径"] },
           verify_question: "画面中是否有人工痕迹（建筑/道路/桥梁等）？" }
   - id: water
     label: "水体"
+    desc: "画面里是否有河流/湖泊/水塘等水面"
     options:
       - { id: any,      label: "不限" }
       - { id: none,     label: "无水体",
           negative: [rivers, streams, lakes, ponds, waterfalls, "flooded water", puddles],
+          zh: { negative: ["河流", "溪流", "湖泊", "池塘", "瀑布", "积水", "水洼"] },
           verify_question: "画面中是否完全没有河流/湖泊/水塘等水体？" }
       - { id: present,  label: "有水体",
           positive: [a water feature woven into the terrain],
+          zh: { positive: ["水景自然融入地形"] },
           verify_question: "画面中是否有水体（河流/湖泊/水塘等）？" }
   - id: enclosure
     label: "空间"
+    desc: "开阔（见天）还是密闭（室内/洞窟）"
     options:
       - { id: any,      label: "不限" }
       - { id: open,     label: "开阔",
           negative: [interior walls, ceilings, "door frames", cave tunnels],
           positive: [vast open sky, wide horizon],
+          zh: { negative: ["室内墙体", "天花板", "门框", "洞穴隧道"],
+                positive: ["开阔天空", "辽阔地平线"] },
           verify_question: "画面是否是开阔场景（能看到天空/地平线）？" }
       - { id: enclosed, label: "密闭",
           negative: [open sky, vast horizons, distant landscapes],
           positive: [claustrophobic enclosed space, low ceilings pressing down],
+          zh: { negative: ["开阔天空", "辽阔地平线", "远景地貌"],
+                positive: ["幽闭密闭空间", "低压天花板"] },
           verify_question: "画面是否是封闭室内/洞穴场景（看不到开阔天空）？" }
   - id: vegetation
     label: "植被"
+    desc: "植物覆盖程度：荒芜还是繁茂"
     options:
       - { id: any,      label: "不限" }
       - { id: barren,   label: "荒芜",
           negative: [lush vegetation, forests, "thick foliage", "flowering plants", "mossy growth"],
           positive: [bare barren ground, "dead twisted branches"],
+          zh: { negative: ["茂密植被", "森林", "厚重枝叶", "开花植物", "苔藓生长"],
+                positive: ["裸露荒芜地表", "枯死扭曲的枝干"] },
           verify_question: "画面是否几乎没有植被（荒芜地表）？" }
       - { id: lush,     label: "繁茂",
           positive: [dense overgrown vegetation, plants reclaiming the space],
+          zh: { positive: ["稠密疯长的植被", "植物重新占据空间"] },
           verify_question: "画面是否有茂密植被？" }
 
 # ---------- 角色动作字典（7-B：pose-batch 逐项注入的预写英文动作词） ----------

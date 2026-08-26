@@ -56,24 +56,41 @@
   .empty { color:var(--dim); padding:30px; text-align:center; }
   .idbox { font-size:12px; color:var(--dim); margin-top:10px; }
   .idbox input { width:auto; display:inline-block; }
+  .lgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; margin-top:6px; }
+  .lcard { background:#22252a; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .lcard img { width:100%; display:block; cursor:zoom-in; }
+  .lbar { display:flex; align-items:center; gap:6px; padding:6px 8px; font-size:12px; }
+  .lst-accepted { color:var(--ok); } .lst-rejected { color:var(--bad); }
+  .lst-generated { color:var(--dim); } .lst-gated { color:var(--ok); }
+  .axis .opt .zh { display:block; font-size:10px; color:var(--dim); }
 </style>
 </head>
 <body>
 <h1>artcreate · 工作台</h1>
 <div class="sub">表单生成 · 任务队列 · 操作时间线（多端同步）</div>
 
-<nav>
-  <button id="nav-new" class="on" onclick="show('new')">新建生成</button>
-  <button id="nav-pose" onclick="show('pose')">动作批量</button>
-  <button id="nav-jobs" onclick="show('jobs')">任务</button>
-  <button id="nav-feed" onclick="show('feed')">时间线</button>
-  <button id="nav-prop" onclick="show('prop')">提案<span id="prop-badge" style="display:none;background:var(--gold);color:#141517;border-radius:8px;font-size:10px;padding:0 5px;margin-left:3px">0</span></button>
-  <button id="nav-review" onclick="location.href='/'">评审视图 →</button>
+<nav style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px">
+  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <span style="color:var(--dim);font-size:11px;min-width:60px">生成资产</span>
+    <button id="nav-new" class="on" onclick="show('new')">场景 / 静物</button>
+    <button id="nav-pose" onclick="show('pose')">角色 / 怪物</button>
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <span style="color:var(--dim);font-size:11px;min-width:60px">审校管理</span>
+    <button id="nav-jobs" onclick="show('jobs')">任务</button>
+    <button id="nav-feed" onclick="show('feed')">时间线</button>
+    <button id="nav-prop" onclick="show('prop')">提案<span id="prop-badge" style="display:none;background:var(--gold);color:#141517;border-radius:8px;font-size:10px;padding:0 5px;margin-left:3px">0</span></button>
+    <button id="nav-review" onclick="location.href='/'">评审视图 →</button>
+  </div>
 </nav>
 
 <div id="page-new" class="panel" style="display:none">
   <div class="row">
-    <div><label>subject（资产名）</label><input type="text" id="f-subject" value=""></div>
+    <div><label>资产名（库内组织 + 拍板发布，一名两用）</label><input type="text" id="f-aname" placeholder="例：shrine_forest" oninput="previewName()"></div>
+    <div style="max-width:180px"><label>后缀</label><select id="f-asuffix" onchange="previewName()"></select><div class="desc" id="desc-f-asuffix"></div></div>
+  </div>
+  <div style="font-size:12px;color:var(--ok);margin:4px 0 8px;min-height:1em" id="aname-preview"></div>
+  <div class="row">
     <div><label>描述（中文一句话）</label><input type="text" id="f-desc" placeholder="例：森林深处一座废弃石祠，晨雾缭绕"></div>
   </div>
   <div class="row">
@@ -89,14 +106,21 @@
   <div id="f-axes"></div>
   <label>自由约束（可选，正向表述）</label>
   <textarea id="f-free" placeholder="例：画面重心偏左，右侧留白"></textarea>
-  <label style="margin-top:12px">资产命名（拍板后发布到交付库 exports/final/）</label>
-  <div class="row">
-    <div><input type="text" id="f-aname" placeholder="主名，例：shrine_forest" oninput="previewName()"></div>
-    <div><select id="f-asuffix" onchange="previewName()"></select><div class="desc" id="desc-f-asuffix"></div></div>
+  <div id="form-extra" style="display:none;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">
+    <label style="color:var(--acc)">迭代来源</label>
+    <div style="font-size:12px;color:var(--dim)" id="form-parent-info"></div>
+    <button onclick="clearParent()" style="margin-top:6px">清除迭代关系（作为全新资产）</button>
   </div>
-  <div style="font-size:12px;color:var(--ok);margin-top:4px;min-height:1em" id="aname-preview"></div>
-  <button class="go" onclick="submitJob()">提交生成任务</button>
+  <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
+    <button class="go" onclick="submitJob()">提交生成任务</button>
+    <button onclick="loadFromHistory()">从历史载入迭代…</button>
+  </div>
   <div class="idbox">身份：<input type="text" id="f-me" placeholder="你的名字（跨设备看是谁操作）" oninput="saveMe()"> <span id="f-me-id"></span></div>
+</div>
+
+<div id="live-zone" class="panel" style="display:none;margin-top:14px">
+  <div id="live-status" class="meta"></div>
+  <div id="live-grid"></div>
 </div>
 
 <div id="page-pose" class="panel" style="display:none">
@@ -258,12 +282,14 @@ async function loadDict() {
   for (const n of [1, 2, 4, 6, 8]) cnt.insertAdjacentHTML('beforeend', `<option ${n===DICT.defaults.count?'selected':''}>${n}</option>`);
   const ax = document.getElementById('f-axes');
   ax.innerHTML = DICT.constraint_axes.map(a => `
-    <div class="axis"><span style="color:var(--dim);font-size:12px">${a.label}</span>
+    <div class="axis">
+      <span style="color:var(--dim);font-size:12px">${a.label}${a.desc ? ` <span style="font-size:11px">· ${a.desc}</span>` : ''}</span>
       <div class="opts">${a.options.map(o => `
         <span class="opt" data-axis="${a.id}" data-opt="${o.id}" onclick="pickAxis(this)">
           ${o.label}<span class="src src-${o.source}">${o.source === 'distilled' ? '★' : o.source === 'project' ? '·' : ''}</span>
         </span>`).join('')}
       </div>
+      <div class="axis-zh desc" id="axis-zh-${a.id}"></div>
     </div>`).join('');
   // 默认全选 any
   document.querySelectorAll('#f-axes .opt').forEach(el => {
@@ -301,11 +327,35 @@ function pickAxis(el) {
   document.querySelectorAll(`.opt[data-axis="${axis}"]`).forEach(x => x.classList.remove('on'));
   el.classList.add('on');
   axisSel[axis] = el.dataset.opt;
+  // 中文对照条：显示该选项注入/排除词的翻译（消除编译信息差）
+  const ax = (DICT.constraint_axes || []).find(a => a.id === axis);
+  const box = document.getElementById('axis-zh-' + axis);
+  if (!ax || !box) return;
+  const opt = ax.options.find(o => o.id === el.dataset.opt);
+  if (!opt || opt.id === 'any') { box.classList.remove('show'); return; }
+  const zh = opt.zh || {};
+  const pos = (zh.positive || []).join('、');
+  const neg = (zh.negative || []).join('、');
+  box.innerHTML = `<b>${opt.label}</b> → ` +
+    (pos ? `注入：<span style="color:var(--ok)">${pos}</span>` : '') +
+    (neg ? `${pos ? ' ∣ ' : ''}排除：<span style="color:var(--bad)">${neg}</span>` : '') +
+    (opt.verify_question ? `<div style="margin-top:2px;color:var(--dim)">验图问句：${opt.verify_question}</div>` : '');
+  box.classList.add('show');
 }
 
+// ---- 提交（资产名一名两用：subject + 发布名）----
+let parentRun = null;   // 迭代来源 run
+function clearParent() {
+  parentRun = null;
+  document.getElementById('form-extra').style.display = 'none';
+}
 async function submitJob() {
+  const aname = document.getElementById('f-aname').value.trim();
+  if (!aname) { alert('资产名必填（库内组织 + 拍板发布一名两用）'); return; }
   const spec = {
-    subject: document.getElementById('f-subject').value.trim() || 'unnamed',
+    subject: aname,
+    asset_name: aname,
+    asset_suffix_key: document.getElementById('f-asuffix').value || 'none',
     description: document.getElementById('f-desc').value.trim(),
     asset_type: document.getElementById('f-atype').value,
     art_style: document.getElementById('f-style').value,
@@ -314,11 +364,7 @@ async function submitJob() {
     count: parseInt(document.getElementById('f-count').value),
     constraints: { axis_sel: axisSel, free_text: document.getElementById('f-free').value.trim() },
   };
-  const aname = document.getElementById('f-aname').value.trim();
-  if (aname) {
-    spec.asset_name = aname;
-    spec.asset_suffix_key = document.getElementById('f-asuffix').value || 'none';
-  }
+  if (parentRun) spec.parent_run = parentRun;
   if (!spec.description) { alert('描述必填'); return; }
   const r = await fetch('/api/jobs', { method: 'POST', headers: {'Content-Type': 'application/json', ...H()}, body: JSON.stringify(spec) });
   const d = await r.json();
@@ -327,7 +373,103 @@ async function submitJob() {
     return;
   }
   if (d.warnings?.length) alert('提示：\n' + d.warnings.map(w => w.message).join('\n'));
-  show('jobs');
+  trackJob(d.job_id);   // 单页闭环：就地进度卡
+}
+
+// ---- 单页闭环：进度卡 + 就地候选网格 ----
+let trackTimer = null;
+function trackJob(jobId) {
+  clearInterval(trackTimer);
+  const zone = document.getElementById('live-zone');
+  zone.style.display = '';
+  trackTimer = setInterval(async () => {
+    const j = await (await fetch(`/api/jobs/${jobId}`, {headers: H()})).json();
+    const card = document.getElementById('live-status');
+    if (j.status === 'queued') {
+      card.innerHTML = `<span class="st-queued">● 排队中</span> <span class="meta">#${j.id}</span>`;
+    } else if (j.status === 'running') {
+      card.innerHTML = `<span class="st-running">● 生成中</span> <span class="meta">${j.progress || ''}…</span>`;
+    } else {
+      clearInterval(trackTimer);
+      if (j.status === 'error') {
+        card.innerHTML = `<span class="st-error">● 失败</span> <div class="meta" style="color:var(--bad);white-space:pre-wrap;margin-top:6px">${(j.error||'').split('\n')[0]}</div>`;
+        return;
+      }
+      card.innerHTML = `<span class="st-done">● 完成</span> <span class="meta">run ${j.run_id}</span>`;
+      loadLiveCandidates(j.run_id);
+    }
+  }, 2500);
+  card_loop();
+}
+async function card_loop() { /* 兼容占位 */ }
+async function loadLiveCandidates(runId) {
+  const d = await (await fetch(`/api/runs/${runId}/candidates`, {headers: H()})).json();
+  const grid = document.getElementById('live-grid');
+  grid.innerHTML = `
+    <div style="font-size:12px;color:var(--dim);margin:8px 0 6px">候选（接受/拒绝就地完成，拍板即发布 exports/final/）</div>
+    <div class="lgrid">${d.candidates.map(c => `
+      <div class="lcard" data-idx="${c.idx}">
+        <img src="/api/images/${d.run.subject}/${runId}/${c.file}" loading="lazy" onclick="zoomLive(this.src)">
+        <div class="lbar">
+          <span>#${c.idx}</span><span class="lst-${c.status}">${c.status}</span>
+          <span style="flex:1"></span>
+          <button class="ok" onclick="liveAct('accept',${c.idx})">接受</button>
+          <button class="no" onclick="liveAct('reject',${c.idx})">拒绝</button>
+        </div>
+      </div>`).join('')}</div>`;
+  grid.dataset.run = runId;
+  grid.dataset.subject = d.run.subject;
+}
+async function liveAct(kind, idx) {
+  const runId = document.getElementById('live-grid').dataset.run;
+  if (kind === 'reject') {
+    const code = prompt('拒绝码（style_drift / composition / constraint_violation / other）:', 'manual');
+    if (code === null) return;
+    await fetch(`/api/runs/${runId}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
+  } else {
+    const r = await fetch(`/api/runs/${runId}/candidates/${idx}/accept`, {method:'POST', headers:H()});
+    const d = await r.json().catch(() => ({}));
+    if (d.final_name) alert(`已拍板并发布：\nexports/final/${d.final_name}.png`);
+  }
+  loadLiveCandidates(runId);
+}
+function zoomLive(src) { window.open(src, '_blank'); }
+
+// ---- 从历史载入（迭代入口）----
+async function loadFromHistory() {
+  const rs = await (await fetch('/api/runs', {headers: H()})).json();
+  const pick = prompt(
+    `选一个历史 run 载入（输入序号）：\n` +
+    rs.slice(0, 20).map((r, i) =>
+      `${i + 1}. ${r.subject} · rev${r.revision} · ${r.created_at}${r.pose ? ' · 动作:' + r.pose : ''}`
+    ).join('\n') + '\n\n（取消=不载入）');
+  if (!pick) return;
+  const r = rs[parseInt(pick) - 1];
+  if (!r) { alert('序号无效'); return; }
+  const full = await (await fetch(`/api/spec/${r.run_id}`, {headers: H()})).json();
+  const spec = full.spec || {};
+  // 回填
+  document.getElementById('f-aname').value = spec.asset_name || spec.subject || '';
+  document.getElementById('f-asuffix').value = spec.asset_suffix_key || 'none';
+  document.getElementById('f-desc').value = spec.description || '';
+  if (spec.asset_type) document.getElementById('f-atype').value = spec.asset_type;
+  if (spec.art_style) document.getElementById('f-style').value = spec.art_style;
+  if (spec.mood) document.getElementById('f-mood').value = spec.mood;
+  if (spec.size) document.getElementById('f-size').value = spec.size;
+  document.getElementById('f-free').value = (spec.constraints || {}).free_text || '';
+  axisSel = {};
+  document.querySelectorAll('#f-axes .opt').forEach(el => el.classList.remove('on'));
+  for (const [ax, opt] of Object.entries((spec.constraints || {}).axis_sel || {})) {
+    const el = document.querySelector(`.opt[data-axis="${ax}"][data-opt="${opt}"]`);
+    if (el) { el.classList.add('on'); axisSel[ax] = opt; }
+  }
+  parentRun = r.run_id;
+  document.getElementById('form-extra').style.display = '';
+  document.getElementById('form-parent-info').textContent =
+    `迭代自 run ${r.run_id}（${r.subject} rev${r.revision}）——修改后重提，自动记录迭代链`;
+  ['f-atype','f-style','f-mood'].forEach(id => showDesc(document.getElementById(id)));
+  previewName();
+  alert('已载入，修改后重新提交即记为该资产的迭代');
 }
 
 // ---- 动作批量（7-B） ----
@@ -443,7 +585,38 @@ function actionZh(a) {
 }
 
 show('new');
-loadDict();
+loadDict().then(() => {
+  // 评审页「载入迭代」跳转：带 run id 自动回填
+  const goto = localStorage.getItem('ac-goto-iterate');
+  if (goto) {
+    localStorage.removeItem('ac-goto-iterate');
+    fillFromRun(goto);
+  }
+});
+async function fillFromRun(runId) {
+  const full = await (await fetch(`/api/spec/${runId}`, {headers: H()})).json();
+  const spec = full.spec || {};
+  document.getElementById('f-aname').value = spec.asset_name || spec.subject || '';
+  document.getElementById('f-asuffix').value = spec.asset_suffix_key || 'none';
+  document.getElementById('f-desc').value = spec.description || '';
+  if (spec.asset_type) document.getElementById('f-atype').value = spec.asset_type;
+  if (spec.art_style) document.getElementById('f-style').value = spec.art_style;
+  if (spec.mood) document.getElementById('f-mood').value = spec.mood;
+  if (spec.size) document.getElementById('f-size').value = spec.size;
+  document.getElementById('f-free').value = (spec.constraints || {}).free_text || '';
+  axisSel = {};
+  document.querySelectorAll('#f-axes .opt').forEach(el => el.classList.remove('on'));
+  for (const [ax, opt] of Object.entries((spec.constraints || {}).axis_sel || {})) {
+    const el = document.querySelector(`.opt[data-axis="${ax}"][data-opt="${opt}"]`);
+    if (el) { el.classList.add('on'); axisSel[ax] = opt; }
+  }
+  parentRun = runId;
+  document.getElementById('form-extra').style.display = '';
+  document.getElementById('form-parent-info').textContent =
+    `迭代自 run ${runId}（${spec.subject || ''}）——修改后重提，自动记录迭代链`;
+  ['f-atype','f-style','f-mood'].forEach(id => showDesc(document.getElementById(id)));
+  previewName();
+}
 </script>
 </body>
 </html>
