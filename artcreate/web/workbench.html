@@ -216,6 +216,15 @@
     <div id="refine-final" style="background:#191b1e;border:1px solid var(--acc);border-radius:6px;padding:8px 10px;font-size:11px;word-break:break-all;color:var(--txt)"></div>
   </div>
 
+  <!-- 迭代载入后：沿用历史编译词（精修底稿 = 上次编译，改中文同步英文） -->
+  <div id="reuse-zone" style="display:none;margin-top:8px;padding:8px 10px;border:1px dashed var(--warn);border-radius:6px">
+    <div style="font-size:12px;color:var(--warn)">已携带历史编译词（迭代载入）</div>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="go" style="margin-top:0" onclick="useLoadedCompile()">沿用上次编译（可精修）</button>
+      <button onclick="discardLoadedCompile()">用新编译（忽略历史）</button>
+    </div>
+  </div>
+
   <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
     <button class="go" onclick="confirmCompile()">确认生成（按此编译执行）</button>
     <button onclick="closeReview()">回去修改</button>
@@ -281,6 +290,29 @@ let axisSel = {};
 let pollTimer = null;
 
 // ---- 轻量身份 ----
+// ---- toast 通知（替代浏览器 alert：右上角三态通知，自动消失，不打断操作）----
+let _toastTimer = null;
+function toast(msg, kind) {   // kind: 'ok' | 'bad' | 'info'（默认）
+  let box = document.getElementById('toast-box');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'toast-box';
+    box.style.cssText = 'position:fixed;top:16px;right:16px;z-index:9999;max-width:420px;'
+      + 'padding:10px 14px;border-radius:8px;font-size:13px;line-height:1.5;'
+      + 'box-shadow:0 4px 16px rgba(0,0,0,.5);transition:opacity .3s;opacity:0';
+    document.body.appendChild(box);
+  }
+  const color = kind === 'ok' ? '#3fb96f' : kind === 'bad' ? '#e05555' : '#4f9cf9';
+  const border = kind === 'ok' ? 'rgba(63,185,111,.5)' : kind === 'bad' ? 'rgba(224,85,85,.5)' : 'rgba(79,156,249,.5)';
+  box.style.background = '#1e2023';
+  box.style.border = `1px solid ${border}`;
+  box.style.borderLeft = `3px solid ${color}`;
+  box.style.color = '#d8dad9';
+  box.textContent = msg;
+  box.style.opacity = '1';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { box.style.opacity = '0'; }, 3500);
+}
 function meId() {
   let v = localStorage.getItem('ac-uuid');
   if (!v) {
@@ -355,17 +387,18 @@ async function actProp(pid, kind) {
   if (kind === 'approve' && !confirm('晋升为新选项？全部用户表单将出现该选项，且写入 derived 版本库')) return;
   const r = await fetch(`/api/proposals/${pid}/${kind}`, {method:'POST', headers:H()});
   const d = await r.json();
-  if (r.status !== 200) { alert('失败：' + JSON.stringify(d.detail || d)); return; }
-  if (d.git_commit) alert('已提交版本库 ' + d.git_commit);
+  if (r.status !== 200) { toast('失败：' + JSON.stringify(d.detail || d), 'bad'); return; }
+  if (d.git_commit) toast('已提交版本库 ' + d.git_commit, 'ok');
   loadProp(propFilter);
   loadDict();  // 字典可能已变（晋升后表单刷新）
 }
 async function runDistill() {
   const r = await fetch('/api/distill/run', {method:'POST', headers:H()});
   const d = await r.json();
-  alert(r.status === 200
+  toast(r.status === 200
     ? `蒸馏完成：采样 ${d.harvested} · LLM 判定 ${d.judged} · 新提案 ${d.new_proposals}`
-    : '失败：' + JSON.stringify(d.detail || d));
+    : '失败：' + JSON.stringify(d.detail || d),
+    r.status === 200 ? 'ok' : 'bad');
   loadProp('pending');
 }
 
@@ -456,13 +489,14 @@ function pickAxis(el) {
 // ---- 提交（资产名一名两用：subject + 发布名）----
 let parentRun = null;   // 迭代来源 run
 let pendingSpec = null; // 审核卡挂起的 spec（确认后入队）
+let loadedCompile = null; // 历史载入携带的编译词（prompt/segments/prompt_zh）——精修底稿
 function clearParent() {
   parentRun = null;
   document.getElementById('form-extra').style.display = 'none';
 }
 function collectSpec() {
   const aname = document.getElementById('f-aname').value.trim();
-  if (!aname) { alert('资产名必填（库内组织 + 拍板发布一名两用）'); return null; }
+  if (!aname) { toast('资产名必填（库内组织 + 拍板发布一名两用）', 'bad'); return null; }
   const spec = {
     subject: aname,
     asset_name: aname,
@@ -480,7 +514,7 @@ function collectSpec() {
     },
   };
   if (parentRun) spec.parent_run = parentRun;
-  if (!spec.description) { alert('描述必填'); return null; }
+  if (!spec.description) { toast('描述必填', 'bad'); return null; }
   return spec;
 }
 async function submitJob() {
@@ -496,7 +530,7 @@ async function submitJob() {
       body: JSON.stringify(spec)});
     const d = await r.json();
     if (r.status !== 200) {
-      alert('spec 校验未通过：\n' + (d.detail?.message || JSON.stringify(d.detail || d)));
+      toast('spec 校验未通过：' + (d.detail?.message || JSON.stringify(d.detail || d)), 'bad');
       return;
     }
     pendingSpec = spec;
@@ -505,7 +539,7 @@ async function submitJob() {
     pendingSpec.compiled_prompt_zh = d.prompt_zh || '';   // 整段直改模式的中文底稿
     renderReviewCard(d);
   } catch (e) {
-    alert('编译预览失败：' + e);
+    toast('编译预览失败：' + e, 'bad');
   } finally {
     btn.textContent = '提交生成任务';
     btn.disabled = false;
@@ -525,6 +559,9 @@ function renderReviewCard(d) {
   document.getElementById('review-prompt').textContent = d.prompt;
   document.getElementById('review-prompt-zh').textContent =
     d.prompt_zh || '（中文翻译暂不可用，上方分段对照仍可核对）';
+  // 历史载入的迭代：提供"沿用上次编译（可精修）"入口
+  const rz = document.getElementById('reuse-zone');
+  rz.style.display = (loadedCompile && loadedCompile.prompt) ? '' : 'none';
   const card = document.getElementById('review-card');
   card.style.display = '';
   card.scrollIntoView({behavior: 'smooth'});
@@ -532,9 +569,12 @@ function renderReviewCard(d) {
 function closeReview() {
   document.getElementById('review-card').style.display = 'none';
   pendingSpec = null;
+  loadedCompile = null;   // 关卡即弃：下次重编或重载
   refineOn = false;
+  refineMode = 'full';    // 重置默认：整段直改
   document.getElementById('refine-zone').style.display = 'none';
   document.getElementById('refine-toggle').textContent = '精修模式…';
+  document.getElementById('reuse-zone').style.display = 'none';
 }
 
 // ---- 精修模式：分段编辑 + 同步重译 + 重组（2026-08-26 方案1）----
@@ -549,7 +589,7 @@ const REFINE_KEYS = [
   { key: 'free_negative_en',   label: '负向排除', has_zh: true, neg: true },
 ];
 let refineSegs = {};   // key -> {zh, en, orig_en, orig_zh}
-let refineMode = 'seg';        // 'seg' 分段精修 | 'full' 整段直改
+let refineMode = 'full';       // 默认整段直改（用户不需懂模板映射）
 let refineFull = { orig_zh: '', orig_en: '', dirty: false };   // 整段模式状态
 function toggleRefine() {
   refineOn = !refineOn;
@@ -560,6 +600,7 @@ function toggleRefine() {
   if (refineOn) {
     buildRefineSegs();
     buildRefineFull();
+    setRefineMode(refineMode);   // 应用当前模式（含视图显示与 chip 高亮）
   }
 }
 function setRefineMode(m) {
@@ -570,13 +611,20 @@ function setRefineMode(m) {
   document.getElementById('refine-full-view').style.display = m === 'full' ? '' : 'none';
 }
 function buildRefineFull() {
-  // 整段直改底稿：编译返回的完整中文翻译 + 对应英文原文
+  // 整段直改底稿：编译返回的完整中文翻译 + 对应英文原文。
+  // 中文底稿缺失（历史沿用+补译失败）时降级分段模式，避免空文本框。
   refineFull.orig_zh = (pendingSpec && pendingSpec.compiled_prompt_zh) || '';
   refineFull.orig_en = (pendingSpec && pendingSpec.compiled_prompt) || '';
   refineFull.dirty = false;
   const ta = document.getElementById('refine-full-zh');
   ta.value = refineFull.orig_zh;
-  renderRefineFinal();
+  if (!refineFull.orig_zh && refineFull.orig_en) {
+    setRefineMode('seg');
+    document.getElementById('refine-status').textContent =
+      '无中文底稿（历史编译补译失败），已切分段精修';
+  } else {
+    renderRefineFinal();
+  }
 }
 function markFullDirty() { refineFull.dirty = true; }
 function buildRefineSegs() {
@@ -739,6 +787,39 @@ function renderRefineFinal() {
     pendingSpec.prompt_edited = true;
   }
 }
+async function useLoadedCompile() {
+  // 沿用历史编译词：pendingSpec 换底稿 → 打开精修（整段底稿=历史编译的中文回译）
+  if (!loadedCompile || !pendingSpec) return;
+  pendingSpec.compiled_prompt = loadedCompile.prompt;
+  if (loadedCompile.segments) pendingSpec.compiled_segments = loadedCompile.segments;
+  pendingSpec.compiled_prompt_zh = '';
+  document.getElementById('review-prompt').textContent = loadedCompile.prompt;
+  // 中文底稿：历史 run 通常没存 prompt_zh，译一次（同 compile-preview 的译法）
+  try {
+    const resp = await fetch('/api/translate-prompt', {
+      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+      body: JSON.stringify({ prompt: loadedCompile.prompt }),
+    });
+    if (resp.ok) {
+      const d = await resp.json();
+      pendingSpec.compiled_prompt_zh = d.zh || '';
+    }
+  } catch (e) { /* 翻译失败不阻断：精修退到分段模式 */ }
+  document.getElementById('review-prompt-zh').textContent =
+    pendingSpec.compiled_prompt_zh || '（历史编译的中文底稿翻译失败，可用分段精修）';
+  document.getElementById('reuse-zone').style.display = 'none';
+  // 重建精修底稿（pendingSpec 已换成历史编译词）并确保精修区打开
+  refineMode = 'full';
+  if (refineOn) { buildRefineSegs(); buildRefineFull(); setRefineMode('full'); }
+  else toggleRefine();
+  document.getElementById('refine-zone').scrollIntoView({behavior:'smooth', block:'nearest'});
+  toast('已切到历史编译词，直接在精修模式改', 'ok');
+}
+function discardLoadedCompile() {
+  loadedCompile = null;
+  document.getElementById('reuse-zone').style.display = 'none';
+  toast('将使用本次新编译', 'info');
+}
 async function confirmCompile() {
   if (!pendingSpec) return;
   const spec = pendingSpec;
@@ -746,7 +827,7 @@ async function confirmCompile() {
   const r = await fetch('/api/jobs', { method: 'POST', headers: {'Content-Type': 'application/json', ...H()}, body: JSON.stringify(spec) });
   const d = await r.json();
   if (r.status !== 200) {
-    alert('入队被拦截：\n' + (d.detail?.message || JSON.stringify(d.detail || d)));
+    toast('入队被拦截：' + (d.detail?.message || JSON.stringify(d.detail || d)), 'bad');
     return;
   }
   trackJob(d.job_id);
@@ -789,25 +870,45 @@ async function loadLiveCandidates(runId) {
         <div class="lbar">
           <span>#${c.idx}</span><span class="lst-${c.status}">${c.status}</span>
           <span style="flex:1"></span>
-          <button class="ok" onclick="liveAct('accept',${c.idx})">接受</button>
-          <button class="no" onclick="liveAct('reject',${c.idx})">拒绝</button>
+          ${c.status === 'generated' || c.status === 'gated' ? `
+            <button class="ok" onclick="liveAct('accept',${c.idx},this)">接受</button>
+            <button class="no" onclick="liveAct('reject',${c.idx},this)">拒绝</button>
+            <button onclick="refineThisRun('${runId}',this)">精修</button>` : ''}
         </div>
       </div>`).join('')}</div>`;
   grid.dataset.run = runId;
   grid.dataset.subject = d.run.subject;
 }
-async function liveAct(kind, idx) {
+async function liveAct(kind, idx, btn) {
   const runId = document.getElementById('live-grid').dataset.run;
-  if (kind === 'reject') {
-    const code = prompt('拒绝码（style_drift / composition / constraint_violation / other）:', 'manual');
-    if (code === null) return;
-    await fetch(`/api/runs/${runId}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
-  } else {
-    const r = await fetch(`/api/runs/${runId}/candidates/${idx}/accept`, {method:'POST', headers:H()});
-    const d = await r.json().catch(() => ({}));
-    if (d.final_name) alert(`已拍板并发布：\nexports/final/${d.final_name}.png`);
+  // 防重复：请求前禁用该卡全部操作按钮（点过即失效，防多次事件/多条历史记录）
+  const card = btn ? btn.closest('.lcard') : null;
+  if (card) card.querySelectorAll('.lbar button').forEach(b => b.disabled = true);
+  try {
+    if (kind === 'reject') {
+      const code = prompt('拒绝码（style_drift / composition / constraint_violation / other）:', 'manual');
+      if (code === null) { if (card) card.querySelectorAll('.lbar button').forEach(b => b.disabled = false); return; }
+      await fetch(`/api/runs/${runId}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
+      toast(`#${idx} 已拒绝`, 'info');
+    } else {
+      const r = await fetch(`/api/runs/${runId}/candidates/${idx}/accept`, {method:'POST', headers:H()});
+      const d = await r.json().catch(() => ({}));
+      if (d.final_name) toast(`已拍板发布：exports/final/${d.final_name}.png`, 'ok');
+      else toast(`#${idx} 接受失败：` + (d.detail || '未知错误'), 'bad');
+    }
+  } catch (e) {
+    toast('操作失败：' + e, 'bad');
+    if (card) card.querySelectorAll('.lbar button').forEach(b => b.disabled = false);
+    return;
   }
   loadLiveCandidates(runId);
+}
+async function refineThisRun(runId, btn) {
+  if (btn) btn.disabled = true;
+  // 候选卡精修入口：取历史 spec+编译词 → 回填表单 → 直达审核卡精修
+  await fillFromRun(runId);
+  document.getElementById('review-card').style.display = 'none';   // 无新编译，先藏审核卡
+  toast('已载入该 run 的编译词，点「提交生成任务」进审核卡精修', 'info');
 }
 function zoomLive(src) { window.open(src, '_blank'); }
 
@@ -837,7 +938,7 @@ async function pickHistory(i) {
   if (!r) return;
   toggleHistoryPanel();
   await fillFromRun(r.run_id, r);
-  alert(`已载入 ${r.subject}（rev${r.revision}），修改后重新提交即记为该资产的迭代`);
+  toast(`已载入 ${r.subject}（rev${r.revision}），已携带历史编译词`, 'ok');
 }
 async function fillFromRun(runId, meta) {
   const full = await (await fetch(`/api/spec/${runId}`, {headers: H()})).json();
@@ -864,10 +965,17 @@ async function fillFromRun(runId, meta) {
     const el = document.querySelector(`.opt[data-axis="${ax}"][data-opt="${opt}"]`);
     if (el) { el.classList.add('on'); axisSel[ax] = opt; }
   }
+  // 历史编译词携带：进精修模式的底稿（prompt=spec 直通词 / segments=分段 /
+  // prompt_zh 用翻译端点按需补齐）
+  loadedCompile = {
+    prompt: spec.compiled_prompt || full.prompt || '',
+    segments: spec.compiled_segments || full.segments || null,
+    prompt_zh: '',
+  };
   parentRun = runId;
   document.getElementById('form-extra').style.display = '';
   document.getElementById('form-parent-info').textContent =
-    `迭代自 run ${runId}（${meta ? meta.subject : spec.subject || ''}）——修改后重提，自动记录迭代链`;
+    `迭代自 run ${runId}（${meta ? meta.subject : spec.subject || ''}）——已携带历史编译词，提交后可在审核卡精修`;
   ['f-atype','f-style','f-mood'].forEach(id => showDesc(document.getElementById(id)));
   previewName();
 }
@@ -904,8 +1012,8 @@ function togglePose(el) {
 }
 async function submitPoses() {
   const char = document.getElementById('pose-char').value.trim();
-  if (!char) { alert('角色名必填'); return; }
-  if (!poseSel.size) { alert('至少选一个动作'); return; }
+  if (!char) { toast('角色名必填', 'bad'); return; }
+  if (!poseSel.size) { toast('至少选一个动作', 'bad'); return; }
   const body = {
     poses: [...poseSel],
     count_each: parseInt(document.getElementById('pose-count').value),
@@ -917,10 +1025,10 @@ async function submitPoses() {
   });
   const d = await r.json();
   if (r.status !== 200) {
-    alert('提交失败：\n' + (d.detail || JSON.stringify(d)));
+    toast('提交失败：' + (d.detail || JSON.stringify(d)), 'bad');
     return;
   }
-  alert(`已入队：${char} × ${body.poses.join(',')}（每动作${body.count_each}张）`);
+  toast(`已入队：${char} × ${body.poses.join(',')}（每动作${body.count_each}张）`, 'ok');
   show('jobs');
 }
 

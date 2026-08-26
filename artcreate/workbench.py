@@ -221,6 +221,26 @@ def retranslate_full(request: Request, body: dict, x_token: str = Header(None)):
     return {"en": en}
 
 
+@router.post("/api/translate-prompt")
+def translate_prompt(request: Request, body: dict, x_token: str = Header(None)):
+    """英文 prompt → 中文全文（精修·整段直改的中文底稿，历史 run 沿用编译时按需补译）。"""
+    _check_token(request, x_token)
+    prompt = str(body.get("prompt") or "").strip()
+    if not prompt:
+        raise HTTPException(422, "prompt 必填")
+    from .tools.llm_client import text_chat
+    try:
+        raw = text_chat(
+            "把下面的英文生图提示词翻译成通顺的中文，直接输出译文，"
+            "不要任何解释：\n" + prompt, temperature=0.2)
+        zh = raw.strip()
+    except Exception as e:
+        raise HTTPException(503, f"翻译失败（LLM 通道异常）：{e}")
+    if not zh:
+        raise HTTPException(502, "LLM 返回为空")
+    return {"zh": zh}
+
+
 @router.post("/api/jobs")
 def create_job(request: Request, spec: dict,
                x_token: str = Header(None),

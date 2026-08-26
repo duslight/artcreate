@@ -47,6 +47,7 @@
            transition:border-color .15s, color .15s, background .15s, box-shadow .15s; }
   button:hover { border-color:#4a5058; background:rgba(255,255,255,.04); }
   button:active { transform:translateY(1px); }
+  button:disabled { opacity:.5; cursor:not-allowed; transform:none; }
   button.ok { color:var(--ok); border-color:rgba(63,185,111,.45); }
   button.ok:hover { border-color:var(--ok); background:rgba(63,185,111,.08); }
   button.no { color:var(--bad); border-color:rgba(224,85,85,.45); }
@@ -125,6 +126,30 @@ function badge(s) {
   return `<span class="badge b-${s}">${s}</span>`;
 }
 
+// ---- toast（替代 alert：右上角三态通知，自动消失）----
+let _toastTimer = null;
+function toast(msg, kind) {
+  let box = document.getElementById('toast-box');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'toast-box';
+    box.style.cssText = 'position:fixed;top:16px;right:16px;z-index:9999;max-width:420px;'
+      + 'padding:10px 14px;border-radius:8px;font-size:13px;line-height:1.5;'
+      + 'box-shadow:0 4px 16px rgba(0,0,0,.5);transition:opacity .3s;opacity:0';
+    document.body.appendChild(box);
+  }
+  const color = kind === 'ok' ? '#3fb96f' : kind === 'bad' ? '#e05555' : '#4f9cf9';
+  const border = kind === 'ok' ? 'rgba(63,185,111,.5)' : kind === 'bad' ? 'rgba(224,85,85,.5)' : 'rgba(79,156,249,.5)';
+  box.style.background = '#1e2023';
+  box.style.border = `1px solid ${border}`;
+  box.style.borderLeft = `3px solid ${color}`;
+  box.style.color = '#d8dad9';
+  box.textContent = msg;
+  box.style.opacity = '1';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { box.style.opacity = '0'; }, 3500);
+}
+
 function render(d) {
   const m = document.getElementById('main');
   const cards = d.candidates.map(c => {
@@ -133,6 +158,7 @@ function render(d) {
       `<div class="${x.pass?'p':'f'}">${x.pass?'✓':'✗'} ${x.name}: ${x.detail}</div>`).join('');
     const l3 = rep.l3 ? (rep.l3.results||[]).map(x =>
       `<div class="${x.ok?'p':'f'}">${x.ok?'✓':'✗'} ${x.source}${x.ok?'':' — '+x.answer}</div>`).join('') : '';
+    const actionable = c.status === 'generated' || c.status === 'gated';
     return `
     <div class="card" data-idx="${c.idx}">
       <img src="/api/images/${d.run.subject}/${d.run.run_id}/${c.file}"
@@ -141,8 +167,10 @@ function render(d) {
         <span>#${c.idx}</span> ${badge(c.status)}
         ${c.reject_code ? `<span style="color:var(--dim);font-size:11px">${c.reject_code}</span>` : ''}
         <span class="spacer"></span>
-        <button class="ok" onclick="act('accept',${c.idx})">接受</button>
-        <button class="no" onclick="act('reject',${c.idx})">拒绝</button>
+        ${actionable ? `
+          <button class="ok" onclick="act('accept',${c.idx},this)">接受</button>
+          <button class="no" onclick="act('reject',${c.idx},this)">拒绝</button>
+          <button onclick="refineRun(this)">精修</button>` : ''}
       </div>
       ${(mech||l3) ? `<div class="checks">${mech}${l3}</div>` : ''}
     </div>`;
@@ -157,6 +185,16 @@ function render(d) {
     <div style="margin-top:6px"><button onclick="toggleExplain()">编译对照（中文全貌）</button></div>
     <div id="lineage"></div>
     <div class="grid">${cards}</div>`;
+}
+function refineRun(btn) {
+  // 精修入口：嵌入工作台时 postMessage 回生成页（载入编译词直达审核卡精修）
+  if (btn) btn.disabled = true;
+  if (window.parent !== window) {
+    window.parent.postMessage({ type: 'ac-iterate', runId: curRun }, '*');
+  } else {
+    localStorage.setItem('ac-goto-iterate', curRun);
+    location.href = '/workbench.html';
+  }
 }
 let explainLoaded = false;
 function toggleExplain() {
@@ -190,22 +228,30 @@ function loadThisRun() {
 async function regen() {
   if (!confirm('同 spec 再生成一批？（revision 不变，记录迭代链）')) return;
   const r = await fetch(`/api/runs/${curRun}/regenerate`, {method:'POST', headers:H()});
-  if (r.ok) { const j = await r.json(); alert('已入队，任务 #' + j.job_id); loadRuns(); }
-  else alert('入队失败');
+  if (r.ok) { const j = await r.json(); toast('已入队，任务 #' + j.job_id, 'ok'); loadRuns(); }
+  else toast('入队失败', 'bad');
 }
 
-async function act(kind, idx) {
-  if (kind === 'reject') {
-    const code = prompt('拒绝码（style_drift / composition / constraint_violation / other）:', 'manual');
-    if (code === null) return;
-    await fetch(`/api/runs/${curRun}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
-  } else {
-    const r = await fetch(`/api/runs/${curRun}/candidates/${idx}/accept`, {method:'POST', headers:H()});
-    const d = await r.json().catch(() => ({}));
-    if (d.final_name) {
-      const evs = document.querySelectorAll(`.card[data-idx="${idx}"] .bar .badge.b-accepted`);
-      alert(`已拍板并发布：\nexports/final/${d.final_name}.png`);
+async function act(kind, idx, btn) {
+  // 防重复：请求前禁用该卡全部操作按钮（点过即失效，防多条历史记录）
+  const card = btn ? btn.closest('.card') : null;
+  if (card) card.querySelectorAll('.bar button').forEach(b => b.disabled = true);
+  try {
+    if (kind === 'reject') {
+      const code = prompt('拒绝码（style_drift / composition / constraint_violation / other）:', 'manual');
+      if (code === null) { if (card) card.querySelectorAll('.bar button').forEach(b => b.disabled = false); return; }
+      await fetch(`/api/runs/${curRun}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
+      toast(`#${idx} 已拒绝`, 'info');
+    } else {
+      const r = await fetch(`/api/runs/${curRun}/candidates/${idx}/accept`, {method:'POST', headers:H()});
+      const d = await r.json().catch(() => ({}));
+      if (d.final_name) toast(`已拍板发布：exports/final/${d.final_name}.png`, 'ok');
+      else toast(`#${idx} 接受失败：` + (d.detail || '未知错误'), 'bad');
     }
+  } catch (e) {
+    toast('操作失败：' + e, 'bad');
+    if (card) card.querySelectorAll('.bar button').forEach(b => b.disabled = false);
+    return;
   }
   sel(curRun);
 }
