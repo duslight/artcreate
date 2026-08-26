@@ -182,18 +182,21 @@ def character_spec(character: str, description: str, sheet: str = "立绘",
 
 
 def pose_batch_spec(character: str, poses: list, description: str = "",
-                    count_each: int = 4, **kw) -> list:
+                    count_each: int = 4, style_refs: list = None, **kw) -> list:
     """7-B 动作批量：构造一组 pose spec（每 pose 一个 run）。
 
     poses 为 character_poses 字典里的合法 id 列表（调用方负责校验或
     依赖 spec_validate 的显式 error）。动作词走字典 inject，锚点自动挂
-    最新锚点。返回 [{pose, spec}, ...]。
+    最新锚点。style_refs：风格锚参考图路径列表（画风固化，与角色锚
+    合并——角色锚在前保形象权重）。返回 [{pose, spec}, ...]。
     """
     cfg = get_config()
     pose_dict = cfg.character_poses
     anchor = get_anchor(character)
     if not anchor:
         raise ValueError(f"角色 {character} 尚无锚点，先 set_anchor")
+    refs = [anchor["image_path"]] + [p for p in (style_refs or [])
+                                     if p != anchor["image_path"]]
     out = []
     for pose in poses:
         if pose not in pose_dict:
@@ -204,7 +207,7 @@ def pose_batch_spec(character: str, poses: list, description: str = "",
             "asset_type": "card_art",
             "count": count_each,
             "constraints": {"axis_sel": {}, "free_text": ""},
-            "ref_images": [anchor["image_path"]],
+            "ref_images": refs,
             "character": {"pose": pose, "sheet": "动作"},
             # 动作词与 sheet 语料拼接（动作词在前，姿态语料兜底）
             "extra_prompt": pose_dict[pose]["inject"]

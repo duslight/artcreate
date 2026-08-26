@@ -94,16 +94,18 @@ def execute_run(spec: dict, refs=None, actor: dict = None):
 
 
 def execute_pose_batch(character: str, poses: list, description: str = "",
-                       count_each: int = 4, actor: dict = None,
-                       on_progress=None) -> dict:
+                       count_each: int = 4, style_refs: list = None,
+                       actor: dict = None, on_progress=None) -> dict:
     """7-B 动作批量执行体：逐 pose 生成 + 自动一致性挂载。
 
     poses：动作 id 列表。on_progress(pose, i, total, run_id) 供 worker
-    更新 job progress。返回 {runs: [{pose, run_id, candidates, consistency}]}。
+    更新 job progress。style_refs：风格锚路径列表（与角色锚合并挂参考图，
+    角色锚在前保形象权重）。返回 {runs: [{pose, run_id, candidates, consistency}]}。
     单 pose 失败不中断整批（记 error 继续），block 级 lint 失败同理。
     """
     from .character import pose_batch_spec, attach_consistency
-    items = pose_batch_spec(character, poses, description, count_each)
+    items = pose_batch_spec(character, poses, description, count_each,
+                            style_refs=style_refs)
     total = len(items)
     runs = []
     for i, item in enumerate(items, 1):

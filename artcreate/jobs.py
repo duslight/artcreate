@@ -142,6 +142,7 @@ def _worker_loop():
                     pb["character"], pb["poses"],
                     description=pb.get("description", ""),
                     count_each=pb.get("count_each", 4),
+                    style_refs=pb.get("style_refs"),
                     actor=actor, on_progress=_prog)
                 errs = [r for r in result["runs"] if r.get("error")]
                 ok_runs = [r["run_id"] for r in result["runs"] if r.get("run_id")]

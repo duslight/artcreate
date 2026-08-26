@@ -466,12 +466,17 @@ def api_pose_batch(name: str, request: Request, body: dict,
     # ---- 锚点前置校验 ----
     if not character.get_anchor(name):
         raise HTTPException(404, f"角色 {name} 尚无锚点，先 set_anchor 再批量生成")
+    # ---- 风格锚参考（画风固化：与角色锚合并挂参考图，上限守卫） ----
+    style_refs = body.get("style_refs") or []
+    if len(style_refs) > 3:
+        raise HTTPException(422, "风格参考最多 3 张")
     # ---- 入队 ----
     spec = {"pose_batch": {
         "character": name,
         "poses": poses,
         "count_each": count_each,
         "description": body.get("description", ""),
+        "style_refs": style_refs,
     }}
     jobs_mod.init_jobs()
     job_id = jobs_mod.submit_job(spec, _actor(x_actor_id, x_actor_name))

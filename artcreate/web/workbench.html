@@ -297,6 +297,12 @@
     </select></div>
   </div>
   <div><label>角色描述（可选）</label><input type="text" id="pose-desc" placeholder="例：红发精灵弓箭手"></div>
+  <!-- 风格参考（动作变体同样可挂：角色锚管形象+风格锚管画风） -->
+  <div id="anim-style-ref-zone" style="margin-top:10px">
+    <label>风格参考（可选：锁画风，最多 3 张。自动与角色锚合并——角色锚管形象，风格锚管画风）</label>
+    <div id="anim-style-ref-list" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
+    <div style="font-size:11px;color:var(--dim)">选择独立保存：切页/刷新不丢</div>
+  </div>
   <label>动作选择</label>
   <div id="pose-list"></div>
   <div class="desc" id="pose-desc-box" style="margin-top:8px"></div>
@@ -579,7 +585,7 @@ function collectSpec() {
   };
   if (parentRun) spec.parent_run = parentRun;
   if (!spec.description) { toast('描述必填', 'bad'); return null; }
-  const refs = selectedRefs(styleRefSel);
+  const refs = selectedRefs('f');
   if (refs.length) spec.ref_images = refs;
   return spec;
 }
@@ -1172,12 +1178,13 @@ async function fillFromRun(runId, meta) {
   document.getElementById('form-parent-info').textContent =
     `迭代自 run ${runId}（${meta ? meta.subject : spec.subject || ''}）——历史编译词已直达下方审核卡，可精修`;
   // 风格参考回填：历史 spec 挂过的参考图按风格锚名重新选中（库中无则忽略）
-  styleRefSel.clear();
+  styleRefSets.f.clear();
   for (const p of (spec.ref_images || [])) {
     const hit = STYLE_ANCHORS.find(a => a.image_path === p);
-    if (hit) styleRefSel.add(hit.character);
+    if (hit) styleRefSets.f.add(hit.character);
   }
-  renderStyleRefs('f', styleRefSel);
+  saveStyleRefState('f');
+  renderStyleRefs('f');
   ['f-atype','f-style','f-mood'].forEach(id => showDesc(document.getElementById(id)));
   previewName();
   // 载入即直达：跳过 LLM 重编译，直接以历史编译词开审核卡+精修（带编译词才有意义）
@@ -1185,9 +1192,29 @@ async function fillFromRun(runId, meta) {
 }
 
 // ---- 风格锚（画风固化：参考图随编译词直送生图模型，与提示词双保险） ----
+// 三页独立选择（场景 f / 角色 c / 动作 anim），localStorage 持久化——切页/刷新不丢
 let STYLE_ANCHORS = [];          // 风格锚库（每名最新一张）
-const styleRefSel = new Set();   // 已选风格锚名（场景表单）
-const charStyleRefSel = new Set(); // 角色表单
+const STYLE_REF_KEY = 'ac-style-refs';
+// 页面标识 → {listId, selSet, storeKey}
+const STYLE_REF_PAGES = {
+  f:    { listId: 'style-ref-list',      storeKey: 'scene' },
+  c:    { listId: 'char-style-ref-list', storeKey: 'character' },
+  anim: { listId: 'anim-style-ref-list', storeKey: 'anim' },
+};
+function loadStyleRefState() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(STYLE_REF_KEY)) || {}; } catch (e) {}
+  const sets = {};
+  for (const [k, cfgp] of Object.entries(STYLE_REF_PAGES))
+    sets[k] = new Set(saved[cfgp.storeKey] || []);
+  return sets;
+}
+function saveStyleRefState(prefix) {
+  const saved = (() => { try { return JSON.parse(localStorage.getItem(STYLE_REF_KEY)) || {}; } catch (e) { return {}; } })();
+  saved[STYLE_REF_PAGES[prefix].storeKey] = [...styleRefSets[prefix]];
+  localStorage.setItem(STYLE_REF_KEY, JSON.stringify(saved));
+}
+const styleRefSets = loadStyleRefState();   // {f: Set, c: Set, anim: Set}
 function refImgUrl(image_path) {
   // exports/<subject>/<run_id>/<file> 三段式；_style_anchors 亦同构
   const parts = (image_path || '').replace(/^exports\//, '').split('/');
@@ -1200,12 +1227,16 @@ async function loadStyleAnchors() {
     if (!r.ok) return;
     STYLE_ANCHORS = (await r.json()).anchors || [];
   } catch (e) { return; }
-  renderStyleRefs('f', styleRefSel);
-  renderStyleRefs('c', charStyleRefSel);
+  // 库中已不存在的锚名清出选中态（防悬挂引用）
+  const names = new Set(STYLE_ANCHORS.map(a => a.character));
+  for (const set of Object.values(styleRefSets))
+    for (const n of [...set]) if (!names.has(n)) set.delete(n);
+  for (const p of Object.keys(STYLE_REF_PAGES)) renderStyleRefs(p);
 }
-function renderStyleRefs(prefix, selSet) {
-  const list = document.getElementById(prefix === 'f' ? 'style-ref-list' : 'char-style-ref-list');
+function renderStyleRefs(prefix) {
+  const list = document.getElementById(STYLE_REF_PAGES[prefix].listId);
   if (!list) return;
+  const selSet = styleRefSets[prefix];
   if (!STYLE_ANCHORS.length) {
     list.innerHTML = '<span style="font-size:12px;color:var(--dim)">暂无风格锚——满意候选点「设为风格锚」，或上传本地图</span>';
     return;
@@ -1214,26 +1245,27 @@ function renderStyleRefs(prefix, selSet) {
     const url = refImgUrl(a.image_path);
     const on = selSet.has(a.character);
     return `
-    <div onclick="toggleStyleRef('${prefix}','${a.character}',this)" title="${a.note || ''}"
+    <div onclick="toggleStyleRef('${prefix}','${a.character}')" title="${a.note || ''}"
       style="cursor:pointer;border:2px solid ${on ? 'var(--acc)' : 'var(--line)'};border-radius:8px;
-      padding:2px;position:relative" onmouseover="this.style.borderColor='${on ? 'var(--acc)' : '#4a4f57'}'" onmouseout="this.style.borderColor='${on ? 'var(--acc)' : 'var(--line)'}'">
+      padding:2px" onmouseover="this.style.borderColor='${on ? 'var(--acc)' : '#4a4f57'}'" onmouseout="this.style.borderColor='${on ? 'var(--acc)' : 'var(--line)'}'">
       ${url ? `<img src="${url}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;display:block">` : ''}
       <div style="font-size:11px;text-align:center;margin-top:2px;color:${on ? 'var(--acc)' : 'var(--dim)'}">${a.character}${a.total > 1 ? '·' + a.total : ''}</div>
     </div>`;
   }).join('');
 }
-function toggleStyleRef(prefix, name, el) {
-  const selSet = prefix === 'f' ? styleRefSel : charStyleRefSel;
+function toggleStyleRef(prefix, name) {
+  const selSet = styleRefSets[prefix];
   if (selSet.has(name)) selSet.delete(name);
   else {
     if (selSet.size >= 3) { toast('风格参考最多 3 张（过多会互相稀释）', 'info'); return; }
     selSet.add(name);
   }
-  renderStyleRefs(prefix, selSet);
+  saveStyleRefState(prefix);
+  renderStyleRefs(prefix);
 }
-function selectedRefs(selSet) {
+function selectedRefs(prefix) {
   // Set<风格锚名> → 最新一张 image_path 列表（生图用参考图）
-  return [...selSet].map(n => (STYLE_ANCHORS.find(a => a.character === n) || {}).image_path)
+  return [...styleRefSets[prefix]].map(n => (STYLE_ANCHORS.find(a => a.character === n) || {}).image_path)
     .filter(Boolean);
 }
 async function uploadStyleRef(input) {
@@ -1345,7 +1377,7 @@ function collectCharSpec() {
       free_text_negative: document.getElementById('c-fneg').value.trim(),
     },
   };
-  const refs = selectedRefs(charStyleRefSel);
+  const refs = selectedRefs('c');
   if (refs.length) spec.ref_images = refs;
   return spec;
 }
@@ -1439,6 +1471,7 @@ async function submitPoses() {
     poses: [...poseSel],
     count_each: parseInt(document.getElementById('pose-count').value),
     description: document.getElementById('pose-desc').value.trim(),
+    style_refs: selectedRefs('anim'),   // 风格锚与角色锚在管线层合并
   };
   const r = await fetch(`/api/characters/${encodeURIComponent(char)}/pose-batch`, {
     method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
