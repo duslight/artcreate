@@ -177,7 +177,7 @@
     <label>风格参考（可选：锁定画风/质感，每次生成最多挂 3 张）</label>
     <div id="style-ref-list" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
     <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
-      <button onclick="toggleAnchorPanel()">建立图片画风锚点…</button>
+      <button onclick="toggleAnchorPanel('style-ref-zone')">建立图片画风锚点…</button>
       <span id="anchor-cap" style="font-size:11px;color:var(--dim)"></span>
     </div>
     <!-- 管理面板：建立行（初始 3 行，可加到上限）+ 已有锚删除 -->
@@ -297,7 +297,10 @@
   <div id="char-style-ref-zone" style="margin-top:10px">
     <label>风格参考（可选：锁定画风/质感，最多 3 张）</label>
     <div id="char-style-ref-list" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
-    <div style="font-size:11px;color:var(--dim)">与场景页共享风格锚库；上传入口在场景页</div>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+      <button onclick="toggleAnchorPanel('char-style-ref-zone')">建立图片画风锚点…</button>
+      <span id="char-anchor-cap" style="font-size:11px;color:var(--dim)"></span>
+    </div>
   </div>
   <div class="row" style="margin-top:10px">
     <div><label>正向自由约束（描述"应该是什么"）</label>
@@ -325,7 +328,10 @@
   <div id="anim-style-ref-zone" style="margin-top:10px">
     <label>风格参考（可选：锁画风，最多 3 张。自动与角色锚合并——角色锚管形象，风格锚管画风）</label>
     <div id="anim-style-ref-list" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
-    <div style="font-size:11px;color:var(--dim)">选择独立保存：切页/刷新不丢</div>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+      <button onclick="toggleAnchorPanel('anim-style-ref-zone')">建立图片画风锚点…</button>
+      <span id="anim-anchor-cap" style="font-size:11px;color:var(--dim)"></span>
+    </div>
   </div>
   <label>动作选择</label>
   <div id="pose-list"></div>
@@ -1258,8 +1264,11 @@ async function loadStyleAnchors() {
   const names = new Set(STYLE_ANCHORS.map(a => a.character));
   for (const set of Object.values(styleRefSets))
     for (const n of [...set]) if (!names.has(n)) set.delete(n);
-  const cap = document.getElementById('anchor-cap');
-  if (cap) cap.textContent = `锚库 ${STYLE_ANCHORS.length}/${ANCHOR_MAX} · 单次生成最多挂 3 张`;
+  const capText = `锚库 ${STYLE_ANCHORS.length}/${ANCHOR_MAX} · 单次生成最多挂 3 张`;
+  for (const cid of ['anchor-cap', 'char-anchor-cap', 'anim-anchor-cap']) {
+    const cap = document.getElementById(cid);
+    if (cap) cap.textContent = capText;
+  }
   for (const p of Object.keys(STYLE_REF_PAGES)) renderStyleRefs(p);
 }
 function renderStyleRefs(prefix) {
@@ -1267,7 +1276,7 @@ function renderStyleRefs(prefix) {
   if (!list) return;
   const selSet = styleRefSets[prefix];
   if (!STYLE_ANCHORS.length) {
-    list.innerHTML = '<span style="font-size:12px;color:var(--dim)">暂无风格锚——满意候选点「设为风格锚」，或上传本地图</span>';
+    list.innerHTML = '<span style="font-size:12px;color:var(--dim)">暂无风格锚——点上方「建立图片画风锚点…」上传本地图</span>';
     return;
   }
   list.innerHTML = STYLE_ANCHORS.map(a => {
@@ -1304,13 +1313,17 @@ function selectedRefs(prefix) {
   return [...styleRefSets[prefix]].map(n => (STYLE_ANCHORS.find(a => a.character === n) || {}).image_path)
     .filter(Boolean);
 }
-// ---- 风格锚管理面板（显式建立/删除） ----
+// ---- 风格锚管理面板（显式建立/删除）----
+// 单例面板：三个资产页各有入口按钮，点谁面板就挂到谁的参考区下方
 let ANCHOR_MAX = 12;
-function toggleAnchorPanel() {
+function toggleAnchorPanel(zoneId) {
   const p = document.getElementById('anchor-panel');
-  const open = p.style.display === 'none';
-  p.style.display = open ? '' : 'none';
-  if (open && !document.getElementById('anchor-rows').children.length)
+  const zone = document.getElementById(zoneId || 'style-ref-zone');
+  const openedHere = p.parentElement === zone && p.style.display !== 'none';
+  if (openedHere) { p.style.display = 'none'; return; }   // 同页再点 = 收起
+  zone.appendChild(p);   // 面板移动到当前页
+  p.style.display = '';
+  if (!document.getElementById('anchor-rows').children.length)
     for (let i = 0; i < 3; i++) addAnchorRow();   // 初始 3 行
 }
 function addAnchorRow() {
@@ -1611,6 +1624,9 @@ window.addEventListener('message', (ev) => {
 });
 
 // ---- 历史任务（时间线）----
+// 前端过滤（方案A）：库管理类操作（建/删锚点等）不展示——历史任务只留生成与决策事实，
+// 数据仍完整留在 events 表（后端继续记录，便于排障回查）。新增无意义动作时在此追加。
+const FEED_HIDDEN_ACTIONS = new Set(['anchor_set', 'style_anchor_deleted']);
 async function loadFeed() {
   // 两请求两用途：evs=筛选后展示，actors=筛选项来源（修复：旧代码解构 3 变量，
   // actors undefined → .map 抛异常 → 静默失败 → 时间线永远空白）
@@ -1618,19 +1634,21 @@ async function loadFeed() {
     fetch(`/api/events?limit=100${document.getElementById('ev-action').value ? '&action=' + document.getElementById('ev-action').value : ''}${document.getElementById('ev-actor').value ? '&actor_id=' + document.getElementById('ev-actor').value : ''}`, {headers: H()}).then(r => r.json()),
     fetch('/api/events?limit=200', {headers: H()}).then(r => r.json()),
   ]).catch(() => [[], []]);
-  // 筛选项填充（一次性）
+  const visible = evs.filter(e => !FEED_HIDDEN_ACTIONS.has(e.action));
+  const actorsVis = actors.filter(e => !FEED_HIDDEN_ACTIONS.has(e.action));
+  // 筛选项填充（一次性；来源也过滤，锚点类动作不出现在筛选项里）
   const actSel = document.getElementById('ev-action');
-  const acts_set = [...new Set(actors.map(e => e.action))].sort();
+  const acts_set = [...new Set(actorsVis.map(e => e.action))].sort();
   if (actSel.options.length <= 1) acts_set.forEach(a => actSel.insertAdjacentHTML('beforeend', `<option>${a}</option>`));
   const whoSel = document.getElementById('ev-actor');
-  const who_set = [...new Set(actors.map(e => e.actor_name || e.actor_id))].sort();
+  const who_set = [...new Set(actorsVis.map(e => e.actor_name || e.actor_id))].sort();
   if (whoSel.options.length <= 1) {
     const idMap = {};
-    actors.forEach(e => { idMap[e.actor_name || e.actor_id] = e.actor_id; });
+    actorsVis.forEach(e => { idMap[e.actor_name || e.actor_id] = e.actor_id; });
     who_set.forEach(w => whoSel.insertAdjacentHTML('beforeend', `<option value="${idMap[w]}">${w}</option>`));
   }
   const el = document.getElementById('feed');
-  el.innerHTML = evs.map(e => `
+  el.innerHTML = visible.map(e => `
     <div class="ev">
       <div><span class="who">${e.actor_name || e.actor_id}</span>
         <span class="what"> ${actionZh(e.action)} ${e.target_id ? `<code style="font-size:11px">${e.target_id}</code>` : ''}</span></div>
