@@ -238,17 +238,60 @@
 </div>
 
 <div id="page-pose" class="panel" style="display:none">
+
+  <!-- 立绘生成（角色冷启动：产出首张立绘 → 拍板 → 「设为锚点」建立形象基准） -->
   <div class="row">
-    <div><label>角色名（须已有锚点）</label><input type="text" id="pose-char" placeholder="例：alice"></div>
-    <div><label>每动作候选数</label><select id="pose-count">
-      <option>2</option><option selected>4</option><option>6</option><option>8</option>
-    </select></div>
+    <div><label>角色名（库内组织 + 拍板发布，一名两用）</label><input type="text" id="c-name" placeholder="例：alice"></div>
   </div>
-  <div><label>角色描述（可选）</label><input type="text" id="pose-desc" placeholder="例：红发精灵弓箭手"></div>
-  <label>动作选择</label>
-  <div id="pose-list"></div>
-  <div class="desc" id="pose-desc-box" style="margin-top:8px"></div>
-  <button class="go" onclick="submitPoses()">提交动作批量任务</button>
+  <div class="row">
+    <div><label>角色描述（中文一句话：外貌/服装/气质）</label><input type="text" id="c-desc" placeholder="例：红发精灵弓箭手，皮质轻甲，斗篷"></div>
+  </div>
+  <div class="row">
+    <div><label>资产类型</label><select id="c-atype" onchange="showDesc(this)"></select><div class="desc" id="desc-c-atype"></div></div>
+    <div><label>画风</label><select id="c-style" onchange="showDesc(this)"></select><div class="desc" id="desc-c-style"></div></div>
+  </div>
+  <div class="row">
+    <div><label>氛围</label><select id="c-mood" onchange="showDesc(this)"></select><div class="desc" id="desc-c-mood"></div></div>
+    <div><label>尺寸</label><select id="c-size"></select></div>
+    <div><label>数量 <span style="font-size:11px;color:var(--dim)">每 1 张图成本≈0.2 元</span></label><select id="c-count"></select></div>
+  </div>
+  <label>约束轴（角色适用）</label>
+  <div id="c-axes"></div>
+  <div class="row" style="margin-top:10px">
+    <div><label>正向自由约束（描述"应该是什么"）</label>
+      <textarea id="c-free" placeholder="例：左手持弓，右手垂放"></textarea></div>
+    <div><label>负向自由约束（不要出现什么）</label>
+      <textarea id="c-fneg" placeholder="例：帽子、护盾"></textarea></div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
+    <button class="go" onclick="submitCharJob()">提交立绘生成任务</button>
+    <span style="font-size:11px;color:var(--dim)">提交后进入编译审核 → 确认生成 → 候选拍板 → 「设为锚点」</span>
+  </div>
+
+  <div style="margin-top:22px;border-top:1px dashed var(--line);padding-top:14px">
+    <div style="font-weight:500;margin-bottom:6px">动作批量（须已有锚点）</div>
+    <div class="row">
+      <div><label>角色名（须已有锚点）</label><input type="text" id="pose-char" placeholder="例：alice"></div>
+      <div><label>每动作候选数</label><select id="pose-count">
+        <option>2</option><option selected>4</option><option>6</option><option>8</option>
+      </select></div>
+    </div>
+    <div><label>角色描述（可选）</label><input type="text" id="pose-desc" placeholder="例：红发精灵弓箭手"></div>
+    <label>动作选择</label>
+    <div id="pose-list"></div>
+    <div class="desc" id="pose-desc-box" style="margin-top:8px"></div>
+    <button class="go" onclick="submitPoses()">提交动作批量任务</button>
+  </div>
+
+  <!-- 锚点状态条：当前角色形象基准（拍板候选晋升而来） -->
+  <div id="anchor-zone" style="display:none;margin-top:22px;border-top:1px dashed var(--line);padding-top:14px">
+    <div style="font-weight:500;margin-bottom:6px">锚点状态</div>
+    <div id="anchor-info" style="font-size:13px"></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input type="text" id="anchor-lookup" placeholder="输入角色名查锚点（例：alice）" style="max-width:280px">
+      <button onclick="lookupAnchor()">查锚点</button>
+    </div>
+  </div>
 </div>
 
 <div id="page-jobs" class="panel" style="display:none">
@@ -346,7 +389,7 @@ function show(p) {
   if (p === 'jobs') loadJobs(true);
   if (p === 'feed') loadFeed();
   if (p === 'prop') loadProp('pending');
-  if (p === 'pose') loadPoseDict();
+  if (p === 'pose') { loadPoseDict(); loadCharDict(); }
 }
 
 // ---- 提案（D22 蒸馏晋升） ----
@@ -928,6 +971,7 @@ async function loadLiveCandidates(runId) {
           ${c.status === 'generated' || c.status === 'gated' ? `
             <button class="ok" onclick="liveAct('accept',${c.idx},this)">接受</button>
             <button class="no" onclick="liveAct('reject',${c.idx},this)">拒绝</button>
+            <button onclick="liveMakeAnchor(${c.idx},'${runId}',this)">设为锚点</button>
             <button onclick="refineThisRun('${runId}',this)">精修</button>` : ''}
         </div>
       </div>`).join('')}</div>`;
@@ -962,6 +1006,37 @@ async function refineThisRun(runId, btn) {
   if (btn) btn.disabled = true;
   // 候选卡精修入口：fillFromRun 内部已"载入即直达"（跳过重编译直达审核卡+精修）
   await fillFromRun(runId);
+}
+async function liveMakeAnchor(idx, runId, btn) {
+  // 设为锚点（工作台候选卡）：晋升角色形象基准，后续动作批量/变体以它为参考图
+  const grid = document.getElementById('live-grid');
+  const subject = grid.dataset.subject || '';
+  const name = prompt('设为哪个角色的锚点？（角色名 = 库内组织名）', subject);
+  if (name === null) return;
+  const charName = name.trim();
+  if (!charName) { toast('角色名不能为空', 'bad'); return; }
+  const card = btn ? btn.closest('.lcard') : null;
+  const file = card ? card.querySelector('img').src.split('/').pop() : '';
+  try {
+    const r = await fetch(`/api/characters/${encodeURIComponent(charName)}/anchor`, {
+      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+      body: JSON.stringify({
+        image_path: `exports/${subject}/${runId}/${file}`,
+        note: `run ${runId} #${idx} 晋升`,
+        from_candidate: `${runId}#${idx}`,
+      }),
+    });
+    if (r.ok) {
+      const j = await r.json();
+      toast(`「${charName}」锚点已建立（#${j.anchor_id}）——角色页动作批量将以它为形象基准`, 'ok');
+      show('pose');   // 切到角色页可立即查锚点验证
+    } else {
+      const e = await r.json().catch(() => ({}));
+      toast('设为锚点失败：' + (e.detail || r.status), 'bad');
+    }
+  } catch (e) {
+    toast('操作失败：' + e, 'bad');
+  }
 }
 function zoomLive(src) { window.open(src, '_blank'); }
 
@@ -1035,7 +1110,150 @@ async function fillFromRun(runId, meta) {
   if (loadedCompile && loadedCompile.prompt) await submitJob();
 }
 
-// ---- 动作批量（7-B） ----
+// ---- 角色模式（立绘生成：复用编译审核链路，atype 锁角色轴） ----
+let charAxisSel = {};
+function axesFor(mode) {
+  // applies_to 过滤：无标注轴=两模式通用
+  return (DICT.constraint_axes || []).filter(a =>
+    !a.applies_to || a.applies_to.includes(mode));
+}
+async function loadCharDict() {
+  if (!DICT) DICT = await (await fetch('/api/form/dict', {headers: H()})).json();
+  // atype 下拉只留角色两类（character_full/character_sheet）
+  const charTypes = Object.fromEntries(Object.entries(DICT.asset_types || {})
+    .filter(([k]) => k.startsWith('character_')));
+  DICT_STORE['c-atype'] = charTypes;
+  DICT_STORE['c-style'] = DICT.art_styles;
+  DICT_STORE['c-mood'] = DICT.moods;
+  const at = document.getElementById('c-atype');
+  at.innerHTML = '';
+  for (const [k, v] of Object.entries(charTypes))
+    at.insertAdjacentHTML('beforeend', `<option value="${k}">${v.label || k}</option>`);
+  for (const [id, src] of [['c-style', DICT.art_styles], ['c-mood', DICT.moods], ['c-size', DICT.sizes]]) {
+    const el = document.getElementById(id);
+    el.innerHTML = '';
+    for (const [k, v] of Object.entries(src))
+      el.insertAdjacentHTML('beforeend', `<option value="${k}">${v.label || k}</option>`);
+  }
+  const cnt = document.getElementById('c-count');
+  cnt.innerHTML = '';
+  for (const n of [1, 2, 4, 6, 8]) cnt.insertAdjacentHTML('beforeend', `<option ${n===4?'selected':''}>${n}</option>`);
+  // 角色适用轴
+  const ax = document.getElementById('c-axes');
+  ax.innerHTML = axesFor('character').map(a => `
+    <div class="axis">
+      <span style="color:var(--dim);font-size:12px">${a.label}${a.desc ? ` <span style="font-size:11px">· ${a.desc}</span>` : ''}</span>
+      <div class="opts">${a.options.map(o => `
+        <span class="opt" data-caxis="${a.id}" data-opt="${o.id}" onclick="pickCharAxis(this)">${o.label}</span>`).join('')}
+      </div>
+      <div class="axis-zh desc" id="caxis-zh-${a.id}"></div>
+    </div>`).join('');
+  // 默认全选 any
+  charAxisSel = {};
+  document.querySelectorAll('#c-axes .opt').forEach(el => {
+    if (el.dataset.opt === 'any') { el.classList.add('on'); charAxisSel[el.dataset.caxis] = 'any'; }
+  });
+  // 默认值：经典竖（卡片立绘）
+  document.getElementById('c-atype').value = 'character_full';
+  document.getElementById('c-style').value = DICT.defaults.art_style;
+  document.getElementById('c-mood').value = DICT.defaults.mood;
+  document.getElementById('c-size').value = '1792x2688';
+  ['c-atype', 'c-style', 'c-mood'].forEach(id => showDesc(document.getElementById(id)));
+}
+function pickCharAxis(el) {
+  const axis = el.dataset.caxis;
+  document.querySelectorAll(`.opt[data-caxis="${axis}"]`).forEach(x => x.classList.remove('on'));
+  el.classList.add('on');
+  charAxisSel[axis] = el.dataset.opt;
+  const ax = axesFor('character').find(a => a.id === axis);
+  const box = document.getElementById('caxis-zh-' + axis);
+  if (!ax || !box) return;
+  const opt = ax.options.find(o => o.id === el.dataset.opt);
+  if (!opt || opt.id === 'any') { box.classList.remove('show'); return; }
+  const zh = opt.zh || {};
+  const pos = (zh.positive || []).join('、');
+  const neg = (zh.negative || []).join('、');
+  box.innerHTML = `<b>${opt.label}</b> → ` +
+    (pos ? `注入：<span style="color:var(--ok)">${pos}</span>` : '') +
+    (neg ? `${pos ? ' ∣ ' : ''}排除：<span style="color:var(--bad)">${neg}</span>` : '') +
+    (opt.verify_question ? `<div style="margin-top:2px;color:var(--dim)">验图问句：${opt.verify_question}</div>` : '');
+  box.classList.add('show');
+}
+function collectCharSpec() {
+  const name = document.getElementById('c-name').value.trim();
+  if (!name) { toast('角色名必填（= 库内组织名 = 拍板发布名）', 'bad'); return null; }
+  const desc = document.getElementById('c-desc').value.trim();
+  if (!desc) { toast('角色描述必填（外貌/服装/气质一句话）', 'bad'); return null; }
+  return {
+    subject: name,
+    asset_name: name,
+    asset_suffix_key: 'none',   // 首张立绘：主名即文件名；后缀迭代走场景表单或精修
+    description: desc,
+    asset_type: document.getElementById('c-atype').value,
+    art_style: document.getElementById('c-style').value,
+    mood: document.getElementById('c-mood').value,
+    size: document.getElementById('c-size').value,
+    count: parseInt(document.getElementById('c-count').value),
+    constraints: {
+      axis_sel: { ...charAxisSel },
+      free_text: document.getElementById('c-free').value.trim(),
+      free_text_negative: document.getElementById('c-fneg').value.trim(),
+    },
+  };
+}
+async function submitCharJob() {
+  const spec = collectCharSpec();
+  if (!spec) return;
+  const btn = document.querySelector('#page-pose .go');
+  btn.textContent = '编译中…';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/compile-preview', {
+      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+      body: JSON.stringify(spec)});
+    const d = await r.json();
+    if (r.status !== 200) {
+      toast('spec 校验未通过：' + (d.detail?.message || JSON.stringify(d.detail || d)), 'bad');
+      return;
+    }
+    pendingSpec = spec;
+    pendingSpec.compiled_prompt = d.prompt;
+    pendingSpec.compiled_segments = d.segments;
+    pendingSpec.compiled_prompt_zh = d.prompt_zh || '';
+    renderReviewCard(d);
+  } catch (e) {
+    toast('编译预览失败：' + e, 'bad');
+  } finally {
+    btn.textContent = '提交立绘生成任务';
+    btn.disabled = false;
+  }
+}
+async function lookupAnchor() {
+  const name = document.getElementById('anchor-lookup').value.trim();
+  if (!name) { toast('输入角色名', 'info'); return; }
+  const zone = document.getElementById('anchor-zone');
+  zone.style.display = '';
+  const info = document.getElementById('anchor-info');
+  const r = await fetch(`/api/characters/${encodeURIComponent(name)}/anchor`, {headers: H()});
+  if (r.status === 404) { info.innerHTML = `<span style="color:var(--dim)">「${name}」尚无锚点——先生成立绘，拍板后点「设为锚点」</span>`; return; }
+  if (!r.ok) { info.textContent = '查询失败：' + r.status; return; }
+  const d = await r.json();
+  const a = d.anchor || {};
+  // image_path 格式 exports/<subject>/<run_id>/<file> → 走三段式图片端点
+  const parts = (a.image_path || '').replace(/^exports\//, '').split('/');
+  const img = parts.length === 3
+    ? `/api/images/${encodeURIComponent(parts[0])}/${parts[1]}/${parts[2]}` : '';
+  info.innerHTML = `
+    <div style="display:flex;gap:12px;align-items:flex-start">
+      ${img ? `<img src="${img}" style="width:110px;border:1px solid var(--line);border-radius:6px" onclick="zoomLive('${img}')">` : ''}
+      <div style="font-size:12px;line-height:1.8">
+        <div>角色：<b>${name}</b> · 锚点 #${a.id}</div>
+        ${a.note ? `<div>说明：${a.note}</div>` : ''}
+        <div>晋升链 ${(d.lineage || []).length} 级（最近设定）</div>
+        <div style="color:var(--dim);word-break:break-all">${a.image_path || ''}</div>
+      </div>
+    </div>`;
+}
 let poseSel = new Set();
 let POSE_DICT = null;
 async function loadPoseDict() {

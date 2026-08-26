@@ -58,6 +58,7 @@ def form_dict(request: Request, x_token: str = Header(None)):
             opts.append(item)
         axes.append({"id": ax["id"], "label": ax.get("label", ax["id"]),
                      "desc": ax.get("desc", ""),
+                     "applies_to": ax.get("applies_to", []),
                      "non_promotable": bool(ax.get("non_promotable")),
                      "options": opts})
     return {

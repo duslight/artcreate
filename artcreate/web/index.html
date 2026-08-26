@@ -170,6 +170,7 @@ function render(d) {
         ${actionable ? `
           <button class="ok" onclick="act('accept',${c.idx},this)">接受</button>
           <button class="no" onclick="act('reject',${c.idx},this)">拒绝</button>
+          <button onclick="makeAnchor(${c.idx},this)">设为锚点</button>
           <button onclick="refineRun(this)">精修</button>` : ''}
       </div>
       ${(mech||l3) ? `<div class="checks">${mech}${l3}</div>` : ''}
@@ -230,6 +231,42 @@ async function regen() {
   const r = await fetch(`/api/runs/${curRun}/regenerate`, {method:'POST', headers:H()});
   if (r.ok) { const j = await r.json(); toast('已入队，任务 #' + j.job_id, 'ok'); loadRuns(); }
   else toast('入队失败', 'bad');
+}
+
+async function makeAnchor(idx, btn) {
+  // 设为锚点：拍板候选晋升角色形象基准（后续 pose 批量/变体都参考它）
+  const d = curData;
+  if (!d) return;
+  const name = prompt('设为哪个角色的锚点？（角色名 = 库内组织名，例：alice）', d.run.subject);
+  if (name === null) return;
+  const charName = name.trim();
+  if (!charName) { toast('角色名不能为空', 'bad'); return; }
+  btn.disabled = true;
+  try {
+    const image_path = `exports/${d.run.subject}/${d.run.run_id}/${d.candidates[idx] ? d.candidates[idx].file : ''}`;
+    const r = await fetch(`/api/characters/${encodeURIComponent(charName)}/anchor`, {
+      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+      body: JSON.stringify({
+        image_path,
+        note: `run ${d.run.run_id} #${idx} 晋升`,
+        from_candidate: `${d.run.run_id}#${idx}`,
+      }),
+    });
+    if (r.ok) {
+      const j = await r.json();
+      toast(`「${charName}」锚点已建立（#${j.anchor_id}）——动作批量将以它为形象基准`, 'ok');
+    } else {
+      const e = await r.json().catch(() => ({}));
+      toast('设为锚点失败：' + (e.detail || r.status), 'bad');
+      btn.disabled = false;
+      return;
+    }
+  } catch (e) {
+    toast('操作失败：' + e, 'bad');
+    btn.disabled = false;
+    return;
+  }
+  loadConsistency(curRun);   // 刷新 Δ 徽标（新锚点立即参与一致性对比）
 }
 
 async function act(kind, idx, btn) {

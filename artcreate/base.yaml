@@ -57,6 +57,15 @@ asset_types:
     label: "纹理图案"
     desc: "可平铺材质表面（木纹/石面/织物）"
     prefix: "Pixel art seamless tileable texture pattern"
+  # 角色模式专用（applies_to: character 过滤，场景表单不显示）
+  character_full:
+    label: "角色立绘"
+    desc: "单角色全身像：干净剪影、居中构图、纯色/简洁背景（作形象基准）"
+    prefix: "Pixel art full-body character portrait, clean silhouette, centered composition, simple background"
+  character_sheet:
+    label: "角色三视图"
+    desc: "同一角色正/侧/背三面并列，比例一致（设定表）"
+    prefix: "Pixel art character turnaround sheet, front side and back views aligned, consistent proportions, neutral background"
 
 # ---------- 氛围原型 → 光影氛围注入词（每条 = 单一光源概念 + 可执行物理描述） ----------
 # desc：光照作用的完整解释（表单选中即显示，解决"简写看不懂"）
@@ -100,9 +109,11 @@ moods:
 #   confidence：distill 置信度 0-1，仅 distilled 项携带
 #   轴级 non_promotable: true 时整轴禁止晋升（关系约束等无法独立成轴的语义）
 constraint_axes:
+  # applies_to：轴适用模式（scene=场景/静物表单，character=角色表单；缺省=两者通用）
   - id: human_trace
     label: "人工痕迹"
     desc: "画面里是否出现人造物（建筑/道路/桥梁/机械等）"
+    applies_to: [scene]
     options:
       - { id: any,      label: "不限" }
       - { id: natural,  label: "完全自然",
@@ -118,6 +129,7 @@ constraint_axes:
   - id: water
     label: "水体"
     desc: "画面里是否有河流/湖泊/水塘等水面"
+    applies_to: [scene]
     options:
       - { id: any,      label: "不限" }
       - { id: none,     label: "无水体",
@@ -131,6 +143,7 @@ constraint_axes:
   - id: enclosure
     label: "空间"
     desc: "开阔（见天）还是密闭（室内/洞窟）"
+    applies_to: [scene]
     options:
       - { id: any,      label: "不限" }
       - { id: open,     label: "开阔",
@@ -148,6 +161,7 @@ constraint_axes:
   - id: vegetation
     label: "植被"
     desc: "植物覆盖程度：荒芜还是繁茂"
+    applies_to: [scene]
     options:
       - { id: any,      label: "不限" }
       - { id: barren,   label: "荒芜",
@@ -160,6 +174,58 @@ constraint_axes:
           positive: [dense overgrown vegetation, plants reclaiming the space],
           zh: { positive: ["稠密疯长的植被", "植物重新占据空间"] },
           verify_question: "画面是否有茂密植被？" }
+
+  # ---- 角色模式轴（applies_to: character） ----
+  - id: char_frame
+    label: "取景"
+    desc: "立绘取景范围：全身还是半身"
+    applies_to: [character]
+    options:
+      - { id: any,      label: "不限" }
+      - { id: full,     label: "全身",
+          positive: ["full body visible head to toe", "complete figure within frame"],
+          zh: { positive: ["从头到脚全身可见", "完整人物在画框内"] },
+          verify_question: "画面中角色是否全身可见（头到脚完整）？" }
+      - { id: half,     label: "半身",
+          negative: ["full body", "legs visible", "feet visible"],
+          positive: ["upper body portrait, waist-up framing"],
+          zh: { negative: ["全身", "腿部可见", "脚部可见"],
+                positive: ["上半身像，腰部以上取景"] },
+          verify_question: "画面是否为半身取景（腰部以上）？" }
+  - id: char_bg
+    label: "背景"
+    desc: "立绘背景复杂度（影响抠图与复用）"
+    applies_to: [character]
+    options:
+      - { id: any,      label: "不限" }
+      - { id: plain,    label: "纯色简洁",
+          negative: ["detailed background", "complex scenery", "environment scene"],
+          positive: ["flat solid color background", "simple gradient backdrop"],
+          zh: { negative: ["复杂背景", "环境场景"],
+                positive: ["纯色平涂背景", "简洁渐变背景"] },
+          verify_question: "背景是否为纯色/简洁（无环境场景细节）？" }
+      - { id: scenic,   label: "带场景",
+          positive: ["character within a themed environment"],
+          zh: { positive: ["角色置身主题环境中"] },
+          verify_question: "画面是否带主题场景背景？" }
+  - id: char_facing
+    label: "朝向"
+    desc: "角色面向（三视图/动作变体的朝向基准）"
+    applies_to: [character]
+    options:
+      - { id: any,      label: "不限" }
+      - { id: front,    label: "正面",
+          positive: ["facing forward toward viewer", "front view"],
+          zh: { positive: ["面向观者", "正面视角"] },
+          verify_question: "角色是否正面朝向观者？" }
+      - { id: side,     label: "侧面",
+          positive: ["side profile view"],
+          zh: { positive: ["侧面轮廓视角"] },
+          verify_question: "角色是否为侧面视角？" }
+      - { id: back,     label: "背面",
+          positive: ["back view, facing away from viewer"],
+          zh: { positive: ["背面，背向观者"] },
+          verify_question: "角色是否背向观者？" }
 
 # ---------- 角色动作字典（7-B：pose-batch 逐项注入的预写英文动作词） ----------
 # inject：姿态/重心/肢体/表情四要素的纯英文物理描述（与 moods.inject 同哲学：不依赖 LLM 现编）
