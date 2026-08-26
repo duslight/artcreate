@@ -129,7 +129,7 @@
     <button id="nav-jobs" onclick="show('jobs')">任务队列</button>
     <button id="nav-feed" onclick="show('feed')">历史任务</button>
     <button id="nav-prop" onclick="show('prop')">画风回写<span id="prop-badge" style="display:none;background:var(--gold);color:#141517;border-radius:8px;font-size:10px;padding:0 5px;margin-left:3px">0</span></button>
-    <button id="nav-review" onclick="location.href='/'">评审视图</button>
+    <button id="nav-review" onclick="show('review')">评审视图</button>
   </div>
 </nav>
 
@@ -252,6 +252,11 @@
   <div id="prop-list">加载中…</div>
 </div>
 
+<div id="page-review" class="panel" style="display:none;padding:0;overflow:hidden">
+  <!-- 页内嵌入评审视图：postMessage 联动（ac-select-run 进 / ac-iterate 回），不再整页跳转 -->
+  <iframe id="review-frame" src="/" style="width:100%;height:78vh;border:none;display:block"></iframe>
+</div>
+
 <div id="page-lineage" style="display:none"></div>
 
 <script>
@@ -285,7 +290,7 @@ function H() { return { ...actorHeaders(), ...tok() }; }
 
 // ---- 页面切换 ----
 function show(p) {
-  for (const x of ['new', 'pose', 'jobs', 'feed', 'prop']) {
+  for (const x of ['new', 'pose', 'jobs', 'feed', 'prop', 'review']) {
     const pg = document.getElementById('page-' + x);
     if (pg) pg.style.display = x === p ? '' : 'none';
     document.getElementById('nav-' + x).classList.toggle('on', x === p);
@@ -850,9 +855,23 @@ async function loadJobs(auto) {
   }
 }
 function goReview(runId) {
+  // 页内切换：评审 iframe 已载则直接 postMessage 选 run；未载则 localStorage 兜底（iframe 启动时读）
   localStorage.setItem('ac-goto-run', runId);
-  location.href = '/';
+  show('review');
+  const f = document.getElementById('review-frame');
+  if (f && f.contentWindow) {
+    try { f.contentWindow.postMessage({ type: 'ac-select-run', runId }, '*'); }
+    catch (e) { /* iframe 未就绪，靠 localStorage 启动读取 */ }
+  }
 }
+
+// 评审页（iframe 内）发起"载入迭代"：切回生成页并回填表单
+window.addEventListener('message', (ev) => {
+  if (ev.data && ev.data.type === 'ac-iterate' && ev.data.runId) {
+    show('new');
+    fillFromRun(ev.data.runId);
+  }
+});
 
 // ---- 历史任务（时间线）----
 async function loadFeed() {

@@ -178,9 +178,13 @@ async function loadExplain() {
   explainLoaded = true;
 }
 function loadThisRun() {
-  // 载入迭代：跳工作台并带上 run id
-  localStorage.setItem('ac-goto-iterate', curRun);
-  location.href = '/workbench.html';
+  // 载入迭代：嵌入工作台时 postMessage 通知父页切换；独立打开时跳转兜底
+  if (window.parent !== window) {
+    window.parent.postMessage({ type: 'ac-iterate', runId: curRun }, '*');
+  } else {
+    localStorage.setItem('ac-goto-iterate', curRun);
+    location.href = '/workbench.html';
+  }
 }
 
 async function regen() {
@@ -238,6 +242,13 @@ function zoom(src) {
 loadRuns().then(() => {
   const go = localStorage.getItem('ac-goto-run');
   if (go) { localStorage.removeItem('ac-goto-run'); sel(go); }
+});
+
+// 嵌入工作台时：接收父页指定的 run（页内切换不整页跳转）
+window.addEventListener('message', (ev) => {
+  if (ev.data && ev.data.type === 'ac-select-run' && ev.data.runId) {
+    sel(ev.data.runId);
+  }
 });
 </script>
 </body>
