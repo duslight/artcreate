@@ -15,9 +15,11 @@ from .tools.postprocess import process_run
 from .gates.lint import lint_spec, format_warnings
 
 
-def execute_run(spec: dict, refs=None, actor: dict = None):
+def execute_run(spec: dict, refs=None, actor: dict = None,
+                provider_override: dict = None):
     """run 与 regenerate 共用的执行体。refs 已解析为路径/URL 列表或 None。
-    返回 manifest；block 级 lint 失败返回 None（未产生费用）。"""
+    provider_override: 自定义生图 API 配置（不落库——spec 入 store 前由
+    调用方剥离）。返回 manifest；block 级 lint 失败返回 None（未产生费用）。"""
     cfg = get_config()
     d = cfg.defaults
     size = spec.get("size", d["size"])
@@ -43,8 +45,10 @@ def execute_run(spec: dict, refs=None, actor: dict = None):
         print("\n⛔ 存在 block 级问题，链路中止（未产生任何费用）")
         return None
 
-    print(f"\n=== 生成（provider={cfg.active_provider}, count={count}）===")
-    raw_urls = generate(result["prompt"], size, count, ref_images=refs)
+    print(f"\n=== 生成（provider={cfg.active_provider}"
+          f"{' +自定义API' if provider_override else ''}, count={count}）===")
+    raw_urls = generate(result["prompt"], size, count, ref_images=refs,
+                        override=provider_override)
     print(f"获得 {len(raw_urls)} 张候选")
 
     run_id = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
@@ -95,6 +99,7 @@ def execute_run(spec: dict, refs=None, actor: dict = None):
 
 def execute_pose_batch(character: str, poses: list, description: str = "",
                        count_each: int = 4, style_refs: list = None,
+                       provider_override: dict = None,
                        actor: dict = None, on_progress=None) -> dict:
     """7-B 动作批量执行体：逐 pose 生成 + 自动一致性挂载。
 
@@ -115,7 +120,8 @@ def execute_pose_batch(character: str, poses: list, description: str = "",
         print(f"\n=== 动作 {i}/{total}：{pose} ===")
         try:
             manifest = execute_run(spec, refs=spec.get("ref_images"),
-                                   actor=actor)
+                                   actor=actor,
+                                   provider_override=provider_override)
         except Exception as e:
             print(f"动作 {pose} 执行失败：{e}")
             runs.append({"pose": pose, "run_id": None, "error": str(e)})

@@ -34,11 +34,23 @@ def _to_data_uri(ref) -> str:
     return f"data:{mime};base64,{b64}"
 
 
-def generate(prompt: str, size: str, count: int = 1, ref_images=None):
-    """生成图 URL 列表。ref_images: None | str | list[str]（路径或 URL，≤14 张）。"""
+def generate(prompt: str, size: str, count: int = 1, ref_images=None,
+             override: dict = None):
+    """生成图 URL 列表。ref_images: None | str | list[str]（路径或 URL，≤14 张）。
+
+    override: 用户自定义 API 配置 {endpoint?, api_key?, model?}（方舟协议
+    兼容端点）。非空时覆盖服务端配置的对应项——密钥只在请求内存中过一遍，
+    不落库不进日志。"""
     cfg = get_config()
     pid = cfg.active_provider
     conf = cfg.provider_conf(pid)
+    if override:
+        if pid != "ark":
+            raise ProviderError("OVERRIDE_UNSUPPORTED",
+                                "当前通道不支持自定义 API 覆盖")
+        conf.update({k: v for k, v in override.items() if v})
+        if not conf.get("api_key"):
+            raise ProviderError("OVERRIDE_NO_KEY", "自定义 API 缺少密钥")
     if pid == "ark":
         return _gen_ark(conf, prompt, size, count, ref_images)
     if pid == "liblib":
@@ -78,6 +90,9 @@ def _gen_ark(conf, prompt, size, count, ref_images):
                 err = {"code": f"HTTP_{e.code}", "message": str(e)}
             raise ProviderError(err.get("code", "ARK_ERROR"),
                                 err.get("message", "方舟调用失败"))
+        except urllib.error.URLError as e:
+            raise ProviderError("ARK_UNREACHABLE",
+                                f"生图端点不可达：{e.reason}（检查 endpoint/网络）")
         data = resp.get("data") or []
         if not data or not data[0].get("url"):
             raise ProviderError("ARK_NO_IMAGE", "方舟未返回图片")

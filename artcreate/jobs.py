@@ -136,6 +136,7 @@ def _worker_loop():
                 # 7-B 动作批量：spec 是壳，真实参数在 pose_batch 段
                 from .pipeline import execute_pose_batch
                 pb = spec["pose_batch"]
+                provider_override = pb.pop("provider_override", None)
                 def _prog(pose, i, total):
                     _set_job(job_id, progress=f"动作 {i}/{total}：{pose}")
                 result = execute_pose_batch(
@@ -143,6 +144,7 @@ def _worker_loop():
                     description=pb.get("description", ""),
                     count_each=pb.get("count_each", 4),
                     style_refs=pb.get("style_refs"),
+                    provider_override=provider_override,
                     actor=actor, on_progress=_prog)
                 errs = [r for r in result["runs"] if r.get("error")]
                 ok_runs = [r["run_id"] for r in result["runs"] if r.get("run_id")]
@@ -165,8 +167,12 @@ def _worker_loop():
                 refs = [str(cfg.root / r) if not Path(r).is_absolute() else r
                         for r in refs]
 
+            # 自定义生图 API：执行前剥离（密钥不落库），单独传 provider
+            provider_override = spec.pop("provider_override", None)
+
             # 执行体内部 print 输出对 web 无意义，但保留（本地 serve 可见日志）
-            manifest = execute_run(spec, refs, actor=actor)
+            manifest = execute_run(spec, refs, actor=actor,
+                                   provider_override=provider_override)
             if manifest is None:
                 _set_job(job_id, status="error",
                          error="L1 lint 拦截（block 级问题，未产生费用）",

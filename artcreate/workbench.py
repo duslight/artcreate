@@ -470,6 +470,10 @@ def api_pose_batch(name: str, request: Request, body: dict,
     style_refs = body.get("style_refs") or []
     if len(style_refs) > 3:
         raise HTTPException(422, "风格参考最多 3 张")
+    # ---- 自定义生图 API（worker 执行前剥离，不落库） ----
+    override = body.get("provider_override") or None
+    if override and not override.get("api_key"):
+        raise HTTPException(422, "自定义 API 缺少 api_key")
     # ---- 入队 ----
     spec = {"pose_batch": {
         "character": name,
@@ -477,6 +481,7 @@ def api_pose_batch(name: str, request: Request, body: dict,
         "count_each": count_each,
         "description": body.get("description", ""),
         "style_refs": style_refs,
+        "provider_override": override,
     }}
     jobs_mod.init_jobs()
     job_id = jobs_mod.submit_job(spec, _actor(x_actor_id, x_actor_name))

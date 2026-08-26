@@ -118,6 +118,24 @@
 <h1>artcreate · 工作台</h1>
 <div class="sub">表单生成 · 任务队列 · 操作时间线（多端同步）</div>
 
+<!-- 生图模型 API：默认走服务端配置；自定义用自己的方舟兼容 API（仅本次会话内存，不落库） -->
+<div id="api-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+  padding:8px 10px;margin:10px 0 0;border:1px solid var(--line);border-radius:8px;background:#1b1d20">
+  <span style="font-size:12px;color:var(--dim)">生图模型API</span>
+  <select id="api-mode" onchange="toggleApiMode(this.value)" style="width:auto">
+    <option value="default">默认（我的API）</option>
+    <option value="custom">自定义…</option>
+  </select>
+  <span id="api-custom" style="display:none;flex:1;min-width:340px;gap:6px" >
+    <span style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center;width:100%">
+      <input type="text" id="api-endpoint" placeholder="endpoint（方舟兼容，如 https://ark.../images/generations）" style="flex:1;min-width:220px" oninput="saveApiCustom()">
+      <input type="text" id="api-model" placeholder="模型 id" style="width:170px" oninput="saveApiCustom()">
+      <input type="password" id="api-key" placeholder="API key" style="width:170px" oninput="saveApiCustom()">
+      <span id="api-badge" style="font-size:11px;color:var(--warn)">自定义已启用</span>
+    </span>
+  </span>
+</div>
+
 <nav style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px">
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
     <span style="color:var(--dim);font-size:11px;min-width:60px">生成资产</span>
@@ -587,6 +605,8 @@ function collectSpec() {
   if (!spec.description) { toast('描述必填', 'bad'); return null; }
   const refs = selectedRefs('f');
   if (refs.length) spec.ref_images = refs;
+  const ov = providerOverride();
+  if (ov && ov.api_key) spec.provider_override = ov;   // 密钥缺省不启用（后端有二次校验）
   return spec;
 }
 async function submitJob() {
@@ -1191,6 +1211,36 @@ async function fillFromRun(runId, meta) {
   if (loadedCompile && loadedCompile.prompt) await submitJob();
 }
 
+// ---- 生图模型 API（默认/自定义：自定义存 localStorage，spec 携带 override，worker 剥离不落库）----
+function toggleApiMode(mode) {
+  document.getElementById('api-custom').style.display = mode === 'custom' ? 'inline' : 'none';
+  localStorage.setItem('ac-api-mode', mode);
+}
+function saveApiCustom() {
+  localStorage.setItem('ac-api-custom', JSON.stringify({
+    endpoint: document.getElementById('api-endpoint').value.trim(),
+    model: document.getElementById('api-model').value.trim(),
+    api_key: document.getElementById('api-key').value.trim(),
+  }));
+}
+function providerOverride() {
+  if (document.getElementById('api-mode').value !== 'custom') return null;
+  let c = {};
+  try { c = JSON.parse(localStorage.getItem('ac-api-custom')) || {}; } catch (e) {}
+  return { endpoint: c.endpoint || '', model: c.model || '', api_key: c.api_key || '' };
+}
+(function initApiBar() {
+  const mode = localStorage.getItem('ac-api-mode') || 'default';
+  document.getElementById('api-mode').value = mode;
+  toggleApiMode(mode);
+  try {
+    const c = JSON.parse(localStorage.getItem('ac-api-custom')) || {};
+    document.getElementById('api-endpoint').value = c.endpoint || '';
+    document.getElementById('api-model').value = c.model || '';
+    document.getElementById('api-key').value = c.api_key || '';
+  } catch (e) {}
+})();
+
 // ---- 风格锚（画风固化：参考图随编译词直送生图模型，与提示词双保险） ----
 // 三页独立选择（场景 f / 角色 c / 动作 anim），localStorage 持久化——切页/刷新不丢
 let STYLE_ANCHORS = [];          // 风格锚库（每名最新一张）
@@ -1379,6 +1429,8 @@ function collectCharSpec() {
   };
   const refs = selectedRefs('c');
   if (refs.length) spec.ref_images = refs;
+  const ov = providerOverride();
+  if (ov && ov.api_key) spec.provider_override = ov;
   return spec;
 }
 async function submitCharJob() {
@@ -1473,6 +1525,8 @@ async function submitPoses() {
     description: document.getElementById('pose-desc').value.trim(),
     style_refs: selectedRefs('anim'),   // 风格锚与角色锚在管线层合并
   };
+  const ov = providerOverride();
+  if (ov && ov.api_key) body.provider_override = ov;
   const r = await fetch(`/api/characters/${encodeURIComponent(char)}/pose-batch`, {
     method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
     body: JSON.stringify(body),
