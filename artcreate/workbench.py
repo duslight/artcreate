@@ -68,6 +68,7 @@ def form_dict(request: Request, x_token: str = Header(None)):
                         if not v.get("ui_hidden")},
         "moods": {k: v for k, v in cfg.moods.items()
                   if not v.get("ui_hidden")},
+        "character_poses": cfg.character_poses,
         "constraint_axes": axes,
     }
 
@@ -225,3 +226,40 @@ def api_consistency(run_id: str, request: Request, x_token: str = Header(None)):
         raise HTTPException(404, "run 不存在")
     return {"subject": row["subject"],
             "reports": character.check_run_consistency(row["subject"], run_id)}
+
+
+@router.post("/api/characters/{name}/pose-batch")
+def api_pose_batch(name: str, request: Request, body: dict,
+                   x_token: str = Header(None),
+                   x_actor_id: str = Header(None),
+                   x_actor_name: str = Header(None)):
+    """7-B 动作批量：body={poses:["idle","attack"], count_each?:4, description?}。
+    前置：角色须有锚点。数量守卫：poses≤8、count_each≤8 防误烧钱。"""
+    _check_token(request, x_token)
+    from . import character, jobs as jobs_mod
+    poses = body.get("poses", [])
+    count_each = body.get("count_each", 4)
+    # ---- 守卫 ----
+    if not poses or not isinstance(poses, list):
+        raise HTTPException(422, "poses 必填且为数组")
+    if len(poses) > 8:
+        raise HTTPException(422, "单批动作不超过 8 个（防误烧钱）")
+    if count_each > 8:
+        raise HTTPException(422, "每动作候选不超过 8 张（防误烧钱）")
+    pose_dict = cfg.character_poses
+    bad = [p for p in poses if p not in pose_dict]
+    if bad:
+        raise HTTPException(422, f"未知动作：{bad}（现有：{sorted(pose_dict)}）")
+    # ---- 锚点前置校验 ----
+    if not character.get_anchor(name):
+        raise HTTPException(404, f"角色 {name} 尚无锚点，先 set_anchor 再批量生成")
+    # ---- 入队 ----
+    spec = {"pose_batch": {
+        "character": name,
+        "poses": poses,
+        "count_each": count_each,
+        "description": body.get("description", ""),
+    }}
+    jobs_mod.init_jobs()
+    job_id = jobs_mod.submit_job(spec, _actor(x_actor_id, x_actor_name))
+    return {"job_id": job_id, "poses": poses, "count_each": count_each}

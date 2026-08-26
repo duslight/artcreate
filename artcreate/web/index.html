@@ -65,6 +65,7 @@ async function loadRuns() {
     <div class="run-item ${curRun===r.run_id?'active':''}" onclick="sel('${r.run_id}')">
       <div class="rid">${r.run_id}</div>
       <div class="rmeta">${r.subject} · rev${r.revision} · ${r.size} · ${r.created_at}</div>
+      ${r.pose ? `<div class="rmeta" style="color:var(--acc)">动作：${r.pose}</div>` : ''}
     </div>`).join('') || '<div class="empty">暂无 run</div>';
 }
 

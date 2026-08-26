@@ -149,6 +149,40 @@ def character_spec(character: str, description: str, sheet: str = "立绘",
     return spec
 
 
+def pose_batch_spec(character: str, poses: list, description: str = "",
+                    count_each: int = 4, **kw) -> list:
+    """7-B 动作批量：构造一组 pose spec（每 pose 一个 run）。
+
+    poses 为 character_poses 字典里的合法 id 列表（调用方负责校验或
+    依赖 spec_validate 的显式 error）。动作词走字典 inject，锚点自动挂
+    最新锚点。返回 [{pose, spec}, ...]。
+    """
+    cfg = get_config()
+    pose_dict = cfg.character_poses
+    anchor = get_anchor(character)
+    if not anchor:
+        raise ValueError(f"角色 {character} 尚无锚点，先 set_anchor")
+    out = []
+    for pose in poses:
+        if pose not in pose_dict:
+            raise ValueError(f"未知动作 '{pose}'（现有：{sorted(pose_dict)}）")
+        spec = {
+            "subject": character,
+            "description": description or f"{character} 动作变体",
+            "asset_type": "card_art",
+            "count": count_each,
+            "constraints": {"axis_sel": {}, "free_text": ""},
+            "ref_images": [anchor["image_path"]],
+            "character": {"pose": pose, "sheet": "动作"},
+            # 动作词与 sheet 语料拼接（动作词在前，姿态语料兜底）
+            "extra_prompt": pose_dict[pose]["inject"]
+                           + ", dynamic action pose, expressive gesture",
+        }
+        spec.update(kw)
+        out.append({"pose": pose, "spec": spec})
+    return out
+
+
 def check_run_consistency(subject: str, run_id: str) -> list:
     """对整个 run 的候选跑锚点一致性。锚点缺失返回空列表。"""
     anchor = get_anchor(subject)
@@ -168,3 +202,39 @@ def check_run_consistency(subject: str, run_id: str) -> list:
         rep["idx"] = r["idx"]
         out.append(rep)
     return out
+
+
+def attach_consistency(subject: str, run_id: str) -> list:
+    """7-B：run 落库后自动跑一致性并写进 gate_report（评审页 Δ 徽标直接有数据）。
+
+    动作变体的 hint 文案与立绘不同：动作幅度大自然距离偏大，重点排查
+    极端值而非区间判定。返回报告列表（无锚点/无候选返回空）。
+    """
+    reports = check_run_consistency(subject, run_id)
+    if not reports:
+        return []
+    for rep in reports:
+        d = rep.get("distance")
+        if d is None:
+            continue
+        if d > 45:
+            rep["hint"] = f"距离 {d}：动作变体极端偏差，建议人审"
+        else:
+            rep["hint"] = f"距离 {d}：动作变体正常范围（动作幅度大自然偏大）"
+        with _LOCK:
+            row = _conn().execute(
+                "SELECT gate_report FROM candidates WHERE run_id=? AND idx=?",
+                (run_id, rep["idx"])).fetchone()
+        try:
+            existing = json.loads(row["gate_report"]) if row and row["gate_report"] else {}
+            if not isinstance(existing, dict):
+                existing = {}
+        except Exception:
+            existing = {}
+        existing["consistency"] = rep
+        with _LOCK:
+            _conn().execute(
+                "UPDATE candidates SET gate_report=? WHERE run_id=? AND idx=?",
+                (json.dumps(existing, ensure_ascii=False), run_id, rep["idx"]))
+            _conn().commit()
+    return reports

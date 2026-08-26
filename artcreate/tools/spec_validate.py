@@ -14,7 +14,7 @@ from .config import get_config
 TOP_FIELDS = {
     "subject", "revision", "description", "extra_prompt",
     "asset_type", "mood", "art_style", "size", "count",
-    "ref_images", "constraints", "parent_run",
+    "ref_images", "constraints", "parent_run", "character",
 }
 CONSTRAINTS_FIELDS = {"axis_sel", "free_text"}
 
@@ -76,6 +76,27 @@ def validate_spec(spec: dict, strict: bool = False) -> list:
         issues.append({"level": "error", "field": "description",
                        "message": f"description 应为字符串，实际 "
                                   f"{type(spec['description']).__name__}"})
+
+    # 5. character 子结构（7-B：pose 写错 = 动作词静默失效，同轴选错原则必须显式拦）
+    ch = spec.get("character")
+    if ch is not None:
+        if not isinstance(ch, dict):
+            issues.append({"level": "error", "field": "character",
+                           "message": f"character 应为字典，实际 {type(ch).__name__}"})
+        else:
+            for key in ch:
+                if key not in ("anchor", "sheet", "pose"):
+                    issues.append({
+                        "level": "warn", "field": f"character.{key}",
+                        "message": f"未知 character 子字段 '{key}'，将被静默忽略"})
+            pose = ch.get("pose")
+            if pose is not None:
+                poses = cfg.character_poses or {}
+                if pose not in poses:
+                    issues.append({
+                        "level": "error", "field": "character.pose",
+                        "message": f"未知动作 '{pose}'（现有动作：{sorted(poses)}），"
+                                   f"动作词已静默失效"})
 
     return issues
 

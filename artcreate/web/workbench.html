@@ -64,6 +64,7 @@
 
 <nav>
   <button id="nav-new" class="on" onclick="show('new')">新建生成</button>
+  <button id="nav-pose" onclick="show('pose')">动作批量</button>
   <button id="nav-jobs" onclick="show('jobs')">任务</button>
   <button id="nav-feed" onclick="show('feed')">时间线</button>
   <button id="nav-prop" onclick="show('prop')">提案<span id="prop-badge" style="display:none;background:var(--gold);color:#141517;border-radius:8px;font-size:10px;padding:0 5px;margin-left:3px">0</span></button>
@@ -90,6 +91,20 @@
   <textarea id="f-free" placeholder="例：画面重心偏左，右侧留白"></textarea>
   <button class="go" onclick="submitJob()">提交生成任务</button>
   <div class="idbox">身份：<input type="text" id="f-me" placeholder="你的名字（跨设备看是谁操作）" oninput="saveMe()"> <span id="f-me-id"></span></div>
+</div>
+
+<div id="page-pose" class="panel" style="display:none">
+  <div class="row">
+    <div><label>角色名（须已有锚点）</label><input type="text" id="pose-char" placeholder="例：alice"></div>
+    <div><label>每动作候选数</label><select id="pose-count">
+      <option>2</option><option selected>4</option><option>6</option><option>8</option>
+    </select></div>
+  </div>
+  <div><label>角色描述（可选）</label><input type="text" id="pose-desc" placeholder="例：红发精灵弓箭手"></div>
+  <label>动作选择</label>
+  <div id="pose-list"></div>
+  <div class="desc" id="pose-desc-box" style="margin-top:8px"></div>
+  <button class="go" onclick="submitPoses()">提交动作批量任务</button>
 </div>
 
 <div id="page-jobs" class="panel" style="display:none">
@@ -151,13 +166,15 @@ function H() { return { ...actorHeaders(), ...tok() }; }
 
 // ---- 页面切换 ----
 function show(p) {
-  for (const x of ['new', 'jobs', 'feed', 'prop']) {
-    document.getElementById('page-' + x).style.display = x === p ? '' : 'none';
+  for (const x of ['new', 'pose', 'jobs', 'feed', 'prop']) {
+    const pg = document.getElementById('page-' + x);
+    if (pg) pg.style.display = x === p ? '' : 'none';
     document.getElementById('nav-' + x).classList.toggle('on', x === p);
   }
   if (p === 'jobs') loadJobs(true);
   if (p === 'feed') loadFeed();
   if (p === 'prop') loadProp('pending');
+  if (p === 'pose') loadPoseDict();
 }
 
 // ---- 提案（D22 蒸馏晋升） ----
@@ -287,6 +304,58 @@ async function submitJob() {
   show('jobs');
 }
 
+// ---- 动作批量（7-B） ----
+let poseSel = new Set();
+let POSE_DICT = null;
+async function loadPoseDict() {
+  if (!DICT) DICT = await (await fetch('/api/form/dict', {headers: H()})).json();
+  POSE_DICT = DICT.character_poses || {};
+  const el = document.getElementById('pose-list');
+  el.innerHTML = Object.entries(POSE_DICT).map(([id, p]) => `
+    <span class="opt pose-chip" data-pose="${id}" onclick="togglePose(this)"
+      style="background:#22252a;border:1px solid var(--line);border-radius:14px;
+      padding:4px 12px;cursor:pointer;font-size:13px;display:inline-block;margin:3px">
+      ${p.label}<span style="color:var(--dim);font-size:10px;margin-left:4px">${id}</span>
+    </span>`).join('');
+}
+function togglePose(el) {
+  const id = el.dataset.pose;
+  if (poseSel.has(id)) { poseSel.delete(id); el.classList.remove('on'); }
+  else { poseSel.add(id); el.classList.add('on'); el.style.outline = '1px solid var(--acc)'; el.style.color = 'var(--acc)'; }
+  if (!poseSel.has(id)) { el.style.outline = ''; el.style.color = ''; }
+  // desc
+  const box = document.getElementById('pose-desc-box');
+  if (poseSel.size === 1) {
+    const pid = [...poseSel][0];
+    const p = POSE_DICT[pid];
+    box.textContent = `${p.label}：${p.desc || ''}`;
+    box.classList.add('show');
+  } else {
+    box.classList.remove('show');
+  }
+}
+async function submitPoses() {
+  const char = document.getElementById('pose-char').value.trim();
+  if (!char) { alert('角色名必填'); return; }
+  if (!poseSel.size) { alert('至少选一个动作'); return; }
+  const body = {
+    poses: [...poseSel],
+    count_each: parseInt(document.getElementById('pose-count').value),
+    description: document.getElementById('pose-desc').value.trim(),
+  };
+  const r = await fetch(`/api/characters/${encodeURIComponent(char)}/pose-batch`, {
+    method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+    body: JSON.stringify(body),
+  });
+  const d = await r.json();
+  if (r.status !== 200) {
+    alert('提交失败：\n' + (d.detail || JSON.stringify(d)));
+    return;
+  }
+  alert(`已入队：${char} × ${body.poses.join(',')}（每动作${body.count_each}张）`);
+  show('jobs');
+}
+
 // ---- 任务 ----
 async function loadJobs(auto) {
   const js = await (await fetch('/api/jobs', {headers: H()})).json();
@@ -337,13 +406,14 @@ async function loadFeed() {
       <div class="when">${e.ts}${e.run_id ? ` · <a href="javascript:;" onclick="goReview('${e.run_id}')">${e.run_id}</a>` : ''}</div>
       ${e.detail?.description ? `<div class="det">“${e.detail.description}”</div>` : ''}
       ${e.detail?.subject ? `<div class="det">subject: ${e.detail.subject}${e.detail.parent_run ? ' · 再生自 ' + e.detail.parent_run : ''}</div>` : ''}
+      ${e.detail?.poses ? `<div class="det">动作：${e.detail.poses.join(', ')}</div>` : ''}
     </div>`).join('') || '<div class="empty">暂无事件</div>';
 }
 function actionZh(a) {
   return { run_created: '发起了生成', accepted: '定稿了', rejected: '拒绝了',
            regenerate: '再生了', axis_promoted: '晋升了选项',
            proposal_rejected: '驳回了提案', undo: '撤销了操作', redo: '重做了操作',
-           distill_run: '运行了蒸馏' }[a] || a;
+           distill_run: '运行了蒸馏', pose_batch: '批量生成了动作' }[a] || a;
 }
 
 show('new');

@@ -8,6 +8,7 @@
 import argparse
 import datetime
 import json
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -334,6 +335,14 @@ def main():
     p.add_argument("subject")
     p.add_argument("run_id", nargs="?", default=None)
 
+    p = sub.add_parser("poses")
+    p.add_argument("character", help="角色名（须已有锚点）")
+    p.add_argument("--poses", required=True,
+                   help="逗号分隔动作 id（如 idle,attack）")
+    p.add_argument("--count-each", type=int, default=4,
+                   help="每动作生成候选数（默认 4）")
+    p.add_argument("--description", default="", help="角色描述（可选）")
+
     args = ap.parse_args()
     if args.version:
         try:
@@ -416,6 +425,24 @@ def main():
         print(f"=== 锚点一致性 run={run_id} ===")
         for r in reps:
             print(f"  #{r['idx']}: 距离 {r['distance']} → {r['verdict']}（{r['hint']}）")
+    elif args.cmd == "poses":
+        from artcreate.pipeline import execute_pose_batch
+        poses = [p.strip() for p in args.poses.split(",") if p.strip()]
+        result = execute_pose_batch(
+            args.character, poses,
+            description=args.description,
+            count_each=args.count_each,
+            actor={"id": os.getenv("ARTCREATE_ACTOR_ID", "cli"),
+                   "name": os.getenv("ARTCREATE_ACTOR_NAME", "cli")})
+        print(f"\n=== 批量完成（{args.character}）===")
+        for r in result["runs"]:
+            if r.get("error"):
+                print(f"  {r['pose']}: 失败 - {r['error']}")
+            else:
+                reps = r.get("consistency") or []
+                dists = [str(x["distance"]) for x in reps if "distance" in x]
+                print(f"  {r['pose']}: run={r['run_id']} "
+                      f"候选{len(reps)}张 距离[{','.join(dists)}]")
 
 
 if __name__ == "__main__":

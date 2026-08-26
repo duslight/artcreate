@@ -83,3 +83,44 @@ def execute_run(spec: dict, refs=None, actor: dict = None):
     if spec.get("parent_run"):
         print(f"父 run：{spec['parent_run']}（再生来源）")
     return manifest
+
+
+def execute_pose_batch(character: str, poses: list, description: str = "",
+                       count_each: int = 4, actor: dict = None,
+                       on_progress=None) -> dict:
+    """7-B 动作批量执行体：逐 pose 生成 + 自动一致性挂载。
+
+    poses：动作 id 列表。on_progress(pose, i, total, run_id) 供 worker
+    更新 job progress。返回 {runs: [{pose, run_id, candidates, consistency}]}。
+    单 pose 失败不中断整批（记 error 继续），block 级 lint 失败同理。
+    """
+    from .character import pose_batch_spec, attach_consistency
+    items = pose_batch_spec(character, poses, description, count_each)
+    total = len(items)
+    runs = []
+    for i, item in enumerate(items, 1):
+        pose, spec = item["pose"], item["spec"]
+        if on_progress:
+            on_progress(pose, i, total)
+        print(f"\n=== 动作 {i}/{total}：{pose} ===")
+        try:
+            manifest = execute_run(spec, refs=spec.get("ref_images"),
+                                   actor=actor)
+        except Exception as e:
+            print(f"动作 {pose} 执行失败：{e}")
+            runs.append({"pose": pose, "run_id": None, "error": str(e)})
+            continue
+        if manifest is None:
+            runs.append({"pose": pose, "run_id": None,
+                         "error": "block 级 lint 未通过"})
+            continue
+        consistency = attach_consistency(character, manifest["run_id"])
+        runs.append({"pose": pose, "run_id": manifest["run_id"],
+                     "candidates": manifest["candidates"],
+                     "consistency": consistency})
+    from .store import log_event
+    log_event("pose_batch", actor, target_type="character",
+              target_id=character,
+              detail={"poses": [r["pose"] for r in runs],
+                      "run_ids": [r.get("run_id") for r in runs]})
+    return {"character": character, "runs": runs}

@@ -144,3 +144,27 @@ constraint_axes:
       - { id: lush,     label: "繁茂",
           positive: [dense overgrown vegetation, plants reclaiming the space],
           verify_question: "画面是否有茂密植被？" }
+
+# ---------- 角色动作字典（7-B：pose-batch 逐项注入的预写英文动作词） ----------
+# inject：姿态/重心/肢体/表情四要素的纯英文物理描述（与 moods.inject 同哲学：不依赖 LLM 现编）
+# desc：表单勾选时显示的人话解释；扩展位勾选计费，不用不花钱
+character_poses:
+  idle:   { label: "待机", inject: "standing idle pose, relaxed neutral stance, weight balanced on both feet, calm expression",
+            desc: "基础站姿待机帧。角色设定展示/头像/横版待机动画用" }
+  walk:   { label: "行走", inject: "walking pose mid-stride, one leg forward, arms swinging naturally, body leaning slightly forward",
+            desc: "行走循环帧。侧面/正面走图，动作幅度小" }
+  attack: { label: "攻击", inject: "dynamic attack pose, weapon swung mid-swing, strong forward lunge, motion energy, determined expression",
+            desc: "攻击动作帧。武器挥出中段+前倾发力，动作幅度大" }
+  hit:    { label: "受击", inject: "hit reaction pose, body recoiling backward, head thrown back, arms flung outward, pain expression",
+            desc: "受击反馈帧。后仰失衡+痛苦表情，注意与倒地区分" }
+  skill:  { label: "技能", inject: "casting skill pose, arms raised channeling energy, glowing magical effect around hands or weapon, focused expression",
+            desc: "技能施放帧。施法姿态+手部/武器能量特效" }
+  death:  { label: "倒地", inject: "defeated falling pose, body collapsing to the ground, limbs limp, dropped weapon, eyes closed",
+            desc: "死亡/倒地帧。瘫倒+武器脱手，横版战斗终态" }
+  # ---- 扩展位 ----
+  cast:   { label: "起手", inject: "wind-up casting pose, arms gathering energy inward before release, coiled tense posture, anticipation",
+            desc: "技能起手帧。与技能帧成对使用构成前后摇（cast→skill）" }
+  jump:   { label: "跳跃", inject: "jumping pose airborne, knees tucked up, arms extended for balance, dynamic upward motion",
+            desc: "跳跃帧。腾空收腿+手臂展开，平台跳跃/闪避用" }
+  sprint: { label: "冲刺", inject: "sprinting pose at full speed, deep forward lean, elbows back, one leg fully extended pushing off, motion lines",
+            desc: "冲刺帧。极端前倾+后摆臂，跑图/突进技用（motion lines 若与画风冲突可在 project.yaml 去掉）" }

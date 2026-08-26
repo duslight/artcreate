@@ -131,8 +131,30 @@ def _worker_loop():
         actor = {"id": job.get("actor_id") or "web-anonymous",
                  "name": job.get("actor_name") or ""}
         try:
-            from .pipeline import execute_run
             spec = json.loads(job["spec"])
+            if spec.get("pose_batch"):
+                # 7-B 动作批量：spec 是壳，真实参数在 pose_batch 段
+                from .pipeline import execute_pose_batch
+                pb = spec["pose_batch"]
+                def _prog(pose, i, total):
+                    _set_job(job_id, progress=f"动作 {i}/{total}：{pose}")
+                result = execute_pose_batch(
+                    pb["character"], pb["poses"],
+                    description=pb.get("description", ""),
+                    count_each=pb.get("count_each", 4),
+                    actor=actor, on_progress=_prog)
+                errs = [r for r in result["runs"] if r.get("error")]
+                ok_runs = [r["run_id"] for r in result["runs"] if r.get("run_id")]
+                _set_job(job_id, status="done" if not errs else "error",
+                         run_id=ok_runs[0] if ok_runs else None,
+                         progress=f"完成（{len(ok_runs)}/{len(result['runs'])} 动作）",
+                         error="；".join(f"{r['pose']}: {r['error']}"
+                                         for r in errs) or None,
+                         finished_at=datetime.now().strftime(
+                             "%Y-%m-%d %H:%M:%S"))
+                continue
+
+            from .pipeline import execute_run
             _set_job(job_id, progress="编译 + L1 lint")
 
             # 执行体内部 print 输出对 web 无意义，但保留（本地 serve 可见日志）

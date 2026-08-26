@@ -119,6 +119,10 @@ class Config:
         return self._raw["moods"]
 
     @property
+    def character_poses(self):
+        return self._raw.get("character_poses", {})
+
+    @property
     def constraint_axes(self):
         return self._raw["constraint_axes"]
 

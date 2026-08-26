@@ -32,13 +32,26 @@ def _actor(x_actor_id: str = None, x_actor_name: str = None) -> dict:
 
 @app.get("/api/runs")
 def list_runs(subject: str = None):
-    sql = "SELECT run_id, subject, revision, size, count, created_at FROM runs"
+    sql = ("SELECT run_id, subject, revision, size, count, created_at, spec"
+           " FROM runs")
     args = []
     if subject:
         sql += " WHERE subject=?"
         args.append(subject)
     sql += " ORDER BY created_at DESC LIMIT 100"
-    return [dict(r) for r in db().execute(sql, args).fetchall()]
+    out = []
+    for r in db().execute(sql, args).fetchall():
+        item = dict(r)
+        # 从 spec 提取 pose 信息供评审页显示徽标
+        try:
+            spec = json.loads(item.pop("spec", "{}"))
+            ch = spec.get("character") or {}
+            if ch.get("pose"):
+                item["pose"] = ch["pose"]
+        except Exception:
+            item.pop("spec", None)
+        out.append(item)
+    return out
 
 
 @app.get("/api/runs/{run_id}/candidates")
