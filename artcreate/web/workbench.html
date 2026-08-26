@@ -189,21 +189,21 @@
   <div id="refine-zone" style="display:none;margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
       <span style="color:var(--acc);font-size:13px;font-weight:600">精修模式</span>
-      <!-- 双模式切换：分段=精准改一处 / 整段=对完整中文直接改（不猜模板映射） -->
+      <!-- 双模式切换：整段=对完整中文直接改（默认，不猜模板映射）/ 分段=精准改一处 -->
       <span class="axis">
-        <span class="opt on" id="rmode-seg" onclick="setRefineMode('seg')">分段精修</span>
-        <span class="opt" id="rmode-full" onclick="setRefineMode('full')" style="margin-left:4px">整段直改</span>
+        <span class="opt on" id="rmode-full" onclick="setRefineMode('full')">整段直改</span>
+        <span class="opt" id="rmode-seg" onclick="setRefineMode('seg')" style="margin-left:4px">分段精修</span>
       </span>
     </div>
 
     <!-- 分段视图 -->
-    <div id="refine-seg-view">
+    <div id="refine-seg-view" style="display:none">
       <div style="color:var(--dim);font-size:11px;margin-bottom:6px">改下面的中文 → 点「同步翻译」→ 被改段的英文自动重译 → 重组完整 prompt</div>
       <div id="refine-segs"></div>
     </div>
 
     <!-- 整段直改视图：对着完整中文 prompt 改，不关心模板约束→英文的映射 -->
-    <div id="refine-full-view" style="display:none">
+    <div id="refine-full-view">
       <div style="color:var(--dim);font-size:11px;margin-bottom:6px">直接改完整中文 prompt（含画风/氛围/排除句的中文译文）→ 点「同步翻译」→ 只重译你改的部分，未改部分英文原样保留</div>
       <textarea id="refine-full-zh" style="min-height:110px;font-size:13px;line-height:1.7" oninput="markFullDirty()"></textarea>
     </div>
@@ -218,8 +218,8 @@
 
   <!-- 迭代载入后：沿用历史编译词（精修底稿 = 上次编译，改中文同步英文） -->
   <div id="reuse-zone" style="display:none;margin-top:8px;padding:8px 10px;border:1px dashed var(--warn);border-radius:6px">
-    <div style="font-size:12px;color:var(--warn)">已携带历史编译词（迭代载入）</div>
-    <div style="display:flex;gap:8px;margin-top:6px">
+    <div class="rz-hint" style="font-size:12px;color:var(--warn)">已携带历史编译词（迭代载入）</div>
+    <div class="rz-btns" style="display:flex;gap:8px;margin-top:6px">
       <button class="go" style="margin-top:0" onclick="useLoadedCompile()">沿用上次编译（可精修）</button>
       <button onclick="discardLoadedCompile()">用新编译（忽略历史）</button>
     </div>
@@ -520,6 +520,51 @@ function collectSpec() {
 async function submitJob() {
   const spec = collectSpec();
   if (!spec) return;
+  // 历史载入且带编译词：跳过重编译（LLM 有随机性，历史词才是所见即所得），
+  // 直达审核卡 + 按需补译中文底稿 → 精修
+  if (loadedCompile && loadedCompile.prompt) {
+    pendingSpec = spec;
+    pendingSpec.compiled_prompt = loadedCompile.prompt;
+    if (loadedCompile.segments) pendingSpec.compiled_segments = loadedCompile.segments;
+    pendingSpec.compiled_prompt_zh = '';
+    pendingSpec.prompt_reused = true;
+    const d = { prompt: loadedCompile.prompt,
+                segments: pendingSpec.compiled_segments,
+                explain: [], lint: [], spec_issues: [] };
+    try {
+      const resp = await fetch('/api/translate-prompt', {
+        method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+        body: JSON.stringify({ prompt: loadedCompile.prompt }),
+      });
+      if (resp.ok) {
+        const t = await resp.json();
+        pendingSpec.compiled_prompt_zh = t.zh || '';
+        d.prompt_zh = pendingSpec.compiled_prompt_zh;
+      }
+    } catch (e) { /* 补译失败不阻断：精修降级分段模式 */ }
+    renderReviewCard(d);
+    // 直达态的 reuse-zone：改成了"逃生口"——历史词已生效，若改过表单想要全新编译从这里走
+    const rz = document.getElementById('reuse-zone');
+    rz.style.display = '';
+    rz.querySelector('.rz-hint').textContent = '已沿用历史编译词（上方 prompt / 精修区底稿）';
+    rz.querySelectorAll('button').forEach(b => b.style.display = 'none');
+    const esc = rz.querySelector('#rz-recompile') || (() => {
+      const btn = document.createElement('button');
+      btn.id = 'rz-recompile';
+      btn.textContent = '用新编译（按当前表单重编）';
+      btn.onclick = () => discardAndRecompile();
+      rz.querySelector('.rz-btns').appendChild(btn);
+      return btn;
+    })();
+    esc.style.display = '';
+    // 自动展开精修模式（从历史/精修按钮进来，目的就是改历史编译词）。
+    // 模式交给 buildRefineFull 内部判断：中文底稿在（补译成功）→ full；缺失 → 降级 seg
+    if (!refineOn) { refineMode = 'full'; toggleRefine(); }
+    else { buildRefineSegs(); refineMode = 'full'; buildRefineFull(); }
+    document.getElementById('refine-zone').scrollIntoView({behavior:'smooth', block:'nearest'});
+    toast('已载入历史编译词，直接改中文即可（确认生成按此直送）', 'ok');
+    return;
+  }
   // 位置A：先同步编译 → 审核卡（中英对照+lint）→ 确认才入队
   const btn = document.querySelector('#page-new .go');
   btn.textContent = '编译中…';
@@ -559,9 +604,13 @@ function renderReviewCard(d) {
   document.getElementById('review-prompt').textContent = d.prompt;
   document.getElementById('review-prompt-zh').textContent =
     d.prompt_zh || '（中文翻译暂不可用，上方分段对照仍可核对）';
-  // 历史载入的迭代：提供"沿用上次编译（可精修）"入口
+  // 历史载入的迭代（尚未提交，等用户选沿用/新编）：提供"沿用上次编译"入口
   const rz = document.getElementById('reuse-zone');
   rz.style.display = (loadedCompile && loadedCompile.prompt) ? '' : 'none';
+  rz.querySelector('.rz-hint').textContent = '已携带历史编译词（迭代载入）';
+  rz.querySelectorAll('.rz-btns button').forEach(b => b.style.display = '');
+  const escBtn = document.getElementById('rz-recompile');
+  if (escBtn) escBtn.style.display = 'none';   // 逃生口只在直达态显示
   const card = document.getElementById('review-card');
   card.style.display = '';
   card.scrollIntoView({behavior: 'smooth'});
@@ -605,10 +654,10 @@ function toggleRefine() {
 }
 function setRefineMode(m) {
   refineMode = m;
-  document.getElementById('rmode-seg').classList.toggle('on', m === 'seg');
   document.getElementById('rmode-full').classList.toggle('on', m === 'full');
-  document.getElementById('refine-seg-view').style.display = m === 'seg' ? '' : 'none';
+  document.getElementById('rmode-seg').classList.toggle('on', m === 'seg');
   document.getElementById('refine-full-view').style.display = m === 'full' ? '' : 'none';
+  document.getElementById('refine-seg-view').style.display = m === 'seg' ? '' : 'none';
 }
 function buildRefineFull() {
   // 整段直改底稿：编译返回的完整中文翻译 + 对应英文原文。
@@ -820,6 +869,12 @@ function discardLoadedCompile() {
   document.getElementById('reuse-zone').style.display = 'none';
   toast('将使用本次新编译', 'info');
 }
+async function discardAndRecompile() {
+  // 直达态逃生口：弃历史编译词，按当前表单重新编译 → 正常审核卡流程
+  loadedCompile = null;
+  toast('弃历史编译词，按当前表单重新编译…', 'info');
+  await submitJob();
+}
 async function confirmCompile() {
   if (!pendingSpec) return;
   const spec = pendingSpec;
@@ -908,7 +963,7 @@ async function refineThisRun(runId, btn) {
   // 候选卡精修入口：取历史 spec+编译词 → 回填表单 → 直达审核卡精修
   await fillFromRun(runId);
   document.getElementById('review-card').style.display = 'none';   // 无新编译，先藏审核卡
-  toast('已载入该 run 的编译词，点「提交生成任务」进审核卡精修', 'info');
+  await submitJob();   // 带历史编译词自动直达审核卡+精修（跳过重编译）
 }
 function zoomLive(src) { window.open(src, '_blank'); }
 
@@ -938,7 +993,7 @@ async function pickHistory(i) {
   if (!r) return;
   toggleHistoryPanel();
   await fillFromRun(r.run_id, r);
-  toast(`已载入 ${r.subject}（rev${r.revision}），已携带历史编译词`, 'ok');
+  toast(`已载入 ${r.subject}（rev${r.revision}）· 点「提交生成任务」直达历史编译词精修`, 'ok');
 }
 async function fillFromRun(runId, meta) {
   const full = await (await fetch(`/api/spec/${runId}`, {headers: H()})).json();
