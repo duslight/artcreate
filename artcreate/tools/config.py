@@ -123,6 +123,10 @@ class Config:
         return self._raw.get("character_poses", {})
 
     @property
+    def asset_suffixes(self):
+        return self._raw.get("asset_suffixes", {})
+
+    @property
     def constraint_axes(self):
         return self._raw["constraint_axes"]
 

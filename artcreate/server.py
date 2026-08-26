@@ -84,7 +84,12 @@ def do_accept(run_id: str, idx: int,
     if not row:
         raise HTTPException(404)
     accept(run_id, idx, actor=_actor(x_actor_id, x_actor_name))
-    return {"ok": True}
+    # 返回发布结果（spec 未命名时 published=None，行为与旧版一致）
+    from .publish import resolve_final_name
+    import json as _json
+    spec_row = db().execute("SELECT spec FROM runs WHERE run_id=?", (run_id,)).fetchone()
+    stem = resolve_final_name(_json.loads(spec_row["spec"]))
+    return {"ok": True, "final_name": stem}
 
 
 @app.post("/api/runs/{run_id}/candidates/{idx}/reject")

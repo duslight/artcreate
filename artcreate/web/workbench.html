@@ -89,6 +89,12 @@
   <div id="f-axes"></div>
   <label>自由约束（可选，正向表述）</label>
   <textarea id="f-free" placeholder="例：画面重心偏左，右侧留白"></textarea>
+  <label style="margin-top:12px">资产命名（拍板后发布到交付库 exports/final/）</label>
+  <div class="row">
+    <div><input type="text" id="f-aname" placeholder="主名，例：shrine_forest" oninput="previewName()"></div>
+    <div><select id="f-asuffix" onchange="previewName()"></select><div class="desc" id="desc-f-asuffix"></div></div>
+  </div>
+  <div style="font-size:12px;color:var(--ok);margin-top:4px;min-height:1em" id="aname-preview"></div>
   <button class="go" onclick="submitJob()">提交生成任务</button>
   <div class="idbox">身份：<input type="text" id="f-me" placeholder="你的名字（跨设备看是谁操作）" oninput="saveMe()"> <span id="f-me-id"></span></div>
 </div>
@@ -242,10 +248,12 @@ async function loadDict() {
   DICT_STORE['f-atype'] = DICT.asset_types;
   DICT_STORE['f-style'] = DICT.art_styles;
   DICT_STORE['f-mood'] = DICT.moods;
+  DICT_STORE['f-asuffix'] = DICT.asset_suffixes || {};
   fill('f-atype', DICT.asset_types, 'label');
   fill('f-style', DICT.art_styles, 'label');
   fill('f-mood', DICT.moods, 'label');
   fill('f-size', DICT.sizes, 'label');
+  fill('f-asuffix', DICT_STORE['f-asuffix'], 'label');
   const cnt = document.getElementById('f-count');
   for (const n of [1, 2, 4, 6, 8]) cnt.insertAdjacentHTML('beforeend', `<option ${n===DICT.defaults.count?'selected':''}>${n}</option>`);
   const ax = document.getElementById('f-axes');
@@ -275,6 +283,19 @@ function fill(id, dict, labelf) {
   for (const [k, v] of Object.entries(dict))
     el.insertAdjacentHTML('beforeend', `<option value="${k}">${v[labelf] || k}</option>`);
 }
+// ---- 资产命名预览 ----
+function previewName() {
+  const name = document.getElementById('f-aname').value.trim();
+  const skey = document.getElementById('f-asuffix').value;
+  const box = document.getElementById('aname-preview');
+  const dbox = document.getElementById('desc-f-asuffix');
+  const suf = (DICT_STORE['f-asuffix'] || {})[skey] || {};
+  if (suf.desc) { dbox.textContent = suf.desc; dbox.classList.add('show'); }
+  else dbox.classList.remove('show');
+  if (!name) { box.textContent = ''; return; }
+  const sfx = skey && skey !== 'none' ? (suf.suffix || '') : '';
+  box.textContent = `→ exports/final/${name}${sfx}.png`;
+}
 function pickAxis(el) {
   const axis = el.dataset.axis;
   document.querySelectorAll(`.opt[data-axis="${axis}"]`).forEach(x => x.classList.remove('on'));
@@ -293,6 +314,11 @@ async function submitJob() {
     count: parseInt(document.getElementById('f-count').value),
     constraints: { axis_sel: axisSel, free_text: document.getElementById('f-free').value.trim() },
   };
+  const aname = document.getElementById('f-aname').value.trim();
+  if (aname) {
+    spec.asset_name = aname;
+    spec.asset_suffix_key = document.getElementById('f-asuffix').value || 'none';
+  }
   if (!spec.description) { alert('描述必填'); return; }
   const r = await fetch('/api/jobs', { method: 'POST', headers: {'Content-Type': 'application/json', ...H()}, body: JSON.stringify(spec) });
   const d = await r.json();

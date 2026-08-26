@@ -245,7 +245,8 @@ def set_status(run_id: str, idx: int, status: str, reject_code: str = None,
 
 
 def accept(run_id: str, idx: int, actor: dict = None):
-    """接受候选：本候选 accepted；同 subject 同 revision 的其余 accepted 候选降级 rejected(auto_superseded)。"""
+    """接受候选：本候选 accepted；同 subject 同 revision 的其余 accepted 候选降级 rejected(auto_superseded)。
+    拍板后若 spec 带 asset_name / pose，自动发布到 exports/final/（资产命名条目）。"""
     with _LOCK:
         conn = _conn()
         row = conn.execute(
@@ -268,6 +269,15 @@ def accept(run_id: str, idx: int, actor: dict = None):
               target_id=f"{run_id}#{idx}", run_id=run_id,
               detail={"subject": row["subject"], "revision": row["revision"],
                       "superseded": [f"{r['run_id']}#{r['idx']}" for r in superseded]})
+    # 命名发布（锁外调用，publish 自取锁）
+    try:
+        from .publish import publish_final
+        publish_final(run_id, idx, actor=actor)
+    except Exception as e:
+        # 发布失败不阻断拍板（评审库数据已落定），事件里记失败原因
+        log_event("final_publish_failed", actor, target_type="candidate",
+                  target_id=f"{run_id}#{idx}", run_id=run_id,
+                  detail={"error": str(e)})
 
 
 def reject(run_id: str, idx: int, code: str = "manual", actor: dict = None):

@@ -69,6 +69,7 @@ def form_dict(request: Request, x_token: str = Header(None)):
         "moods": {k: v for k, v in cfg.moods.items()
                   if not v.get("ui_hidden")},
         "character_poses": cfg.character_poses,
+        "asset_suffixes": cfg.asset_suffixes,
         "constraint_axes": axes,
     }
 

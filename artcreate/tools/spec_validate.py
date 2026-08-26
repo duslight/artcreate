@@ -15,6 +15,7 @@ TOP_FIELDS = {
     "subject", "revision", "description", "extra_prompt",
     "asset_type", "mood", "art_style", "size", "count",
     "ref_images", "constraints", "parent_run", "character",
+    "asset_name", "asset_suffix_key",
 }
 CONSTRAINTS_FIELDS = {"axis_sel", "free_text"}
 
@@ -97,6 +98,18 @@ def validate_spec(spec: dict, strict: bool = False) -> list:
                         "level": "error", "field": "character.pose",
                         "message": f"未知动作 '{pose}'（现有动作：{sorted(poses)}），"
                                    f"动作词已静默失效"})
+
+    # 6. 资产命名（拍板发布 exports/final/ 用；格式错误会导致发布失败，error 拦）
+    name = spec.get("asset_name")
+    if name is not None:
+        if not isinstance(name, str) or not name.strip():
+            issues.append({"level": "error", "field": "asset_name",
+                           "message": "asset_name 应为非空字符串"})
+        elif not all(c.isalnum() or c in "-_" for c in name):
+            issues.append({
+                "level": "error", "field": "asset_name",
+                "message": f"asset_name '{name}' 含非法字符（只允许字母/数字/-/_，"
+                           f"避免路径穿越与跨平台文件名问题）"})
 
     return issues
 

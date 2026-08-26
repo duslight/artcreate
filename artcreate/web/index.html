@@ -147,7 +147,12 @@ async function act(kind, idx) {
     if (code === null) return;
     await fetch(`/api/runs/${curRun}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
   } else {
-    await fetch(`/api/runs/${curRun}/candidates/${idx}/accept`, {method:'POST', headers:H()});
+    const r = await fetch(`/api/runs/${curRun}/candidates/${idx}/accept`, {method:'POST', headers:H()});
+    const d = await r.json().catch(() => ({}));
+    if (d.final_name) {
+      const evs = document.querySelectorAll(`.card[data-idx="${idx}"] .bar .badge.b-accepted`);
+      alert(`已拍板并发布：\nexports/final/${d.final_name}.png`);
+    }
   }
   sel(curRun);
 }
