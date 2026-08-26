@@ -39,7 +39,7 @@ def lint_spec(spec: dict, compiled_prompt: str = "", art_style: str = ""):
 
     # 2. 负向注入扫描（自由约束文本是重灾区；描述里的否定交给编译器语义处理）
     #    注意：constraints.free_text_negative（负向自由约束）不扫——
-    #    它本来就该写否定，编译时直通 strictly no 排除子句（正确用法）
+    #    它本来就该写否定，编译时直通句尾排除块（正确用法）
     for text, field in ((free_text, "自由约束"), (extra, "细化项")):
         for pattern, lang in NEGATION_PATTERNS:
             m = pattern.search(text)

@@ -120,25 +120,36 @@ def compile_prompt(spec: dict) -> dict:
     parts.append(atmosphere)
     parts.append(extra_en if extra_en else extra)
     parts += positives
-
-    neg_items = list(negatives)
-    if "people" not in neg_items:
-        neg_items.append("people")
+    # 正向自由约束：忠实翻译后进正向区（历史上误入负向块=禁止自己要求的东西，修正）
     if cons_en:
-        neg_items.append("— " + cons_en)
+        parts.append(cons_en)
     elif free_constraints:
-        neg_items.append("— " + free_constraints)
-    # 负向自由约束：翻译为裸名词短语，直接并入排除子句
-    # （strictly no 块是模型安全例外区，这里否定不触发粉红大象反向激活）
-    if neg_en:
-        neg_items.append(neg_en)
-    elif free_negative:
-        neg_items.append(free_negative)   # LLM 失败降级：中文直通
-    parts.append("strictly no " + ", ".join(neg_items))
-
+        parts.append(free_constraints)   # LLM 失败降级：中文直通
     parts.append(style["suffix"])
 
+    # ---- 负向排除块：拆词 → 全局去重 → 句法隔离放真句尾 ----
+    # 词表来源：轴负向 + 默认 people + 负向自由约束（LLM 裸名词串或中文降级）
+    def _split_items(s: str) -> list:
+        return [t.strip() for t in re.split(r"[，,、]", s) if t.strip()]
+    neg_raw = list(negatives)
+    if neg_en:
+        neg_raw += _split_items(neg_en)
+    elif free_negative:
+        neg_raw += _split_items(free_negative)   # LLM 失败降级：中文直通
+    neg_items, seen = [], set()
+    for item in neg_raw:
+        key = item.lower()
+        if key not in seen:
+            seen.add(key)
+            neg_items.append(item)
+    if "people" not in seen:
+        neg_items.append("people")
+
+    # 主句（正向流）与排除块用句号隔离：T5 编码器把 "Strictly avoid:" 句
+    # 当独立指令处理，逗号长流里排除词会被画风词稀释（2026-08-26 实测回归）
     full = ", ".join(p.strip().rstrip(".") for p in parts if p and p.strip())
+    if neg_items:
+        full += ". Strictly avoid: " + ", ".join(neg_items) + "."
     return {
         "prompt": full,
         "segments": {  # 分段结构落 manifest（消融实验/溯源 D19）
@@ -149,6 +160,7 @@ def compile_prompt(spec: dict) -> dict:
             "atmosphere_notes": atmosphere,
             "extra_en": extra_en or extra,
             "positives": positives,
+            "free_constraints_en": cons_en or free_constraints,
             "free_negative_en": neg_en or free_negative,
             "negative_block": neg_items,
             "style_suffix": style["suffix"],

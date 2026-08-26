@@ -22,7 +22,7 @@ COMPILED PROMPT (system parts already stripped; user-domain only):
 {prompt}
 
 The prompt below has system parts REMOVED (media prefix, style suffix,
-"strictly no ..." lists, mood lighting injection). Audit ONLY user fidelity:
+"Strictly avoid: ..." exclusion sentence, mood lighting injection). Audit ONLY user fidelity:
 
 MAPPING RULES — how form items appear (do NOT report as missing):
 - description → ENGLISH PARAPHRASE near the start (faithful meaning, not
@@ -53,6 +53,7 @@ def audit_compilation(spec: dict, compiled_prompt: str,
                      segments.get("scene_expansion"), segments.get("mood_inject"),
                      segments.get("atmosphere_notes"),
                      segments.get("extra_en"),
+                     segments.get("free_constraints_en"),
                      *segments.get("positives", [])):
             if part:
                 audited = audited.replace(part, "")
@@ -64,6 +65,9 @@ def audit_compilation(spec: dict, compiled_prompt: str,
         at_id = spec.get("asset_type", cfg.defaults["asset_type"])
         audited = audited.replace(cfg.asset_types[at_id]["prefix"], "")
     import re as _re
+    # 新结构：排除块为句号隔离的独立句 "Strictly avoid: a, b."
+    audited = _re.sub(r"\.\s*Strictly avoid: [^.]*\.?", "", audited)
+    # 兼容旧结构残留："strictly no ..." 逗号流
     audited = _re.sub(r"strictly no [^,]*(?:, [^,]*)*(?=,|$)", "", audited)
     audited = _re.sub(r"— [^,]*(?=,|$)", "", audited)
     audited = ", ".join(p for p in (x.strip() for x in audited.split(",")) if p)
