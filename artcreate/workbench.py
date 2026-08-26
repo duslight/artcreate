@@ -391,11 +391,15 @@ STYLE_ANCHOR_MAX = 12   # 锚名数上限（单次生图挂载仍限 3 张防稀
 
 
 @router.get("/api/style-anchors")
-def api_list_style_anchors(request: Request, x_token: str = Header(None)):
-    """风格锚库（表单选择器数据源）：每风格名最新一张 + 张数 + 上限。"""
+def api_list_style_anchors(request: Request, scope: str = "scene",
+                           x_token: str = Header(None)):
+    """风格锚库（表单选择器数据源）：某资产页的锚，每风格名最新一张 + 张数 + 上限。
+    scope: scene|character|anim（三页独立库）。"""
     _check_token(request, x_token)
     from . import character
-    return {"anchors": character.list_style_anchors(),
+    if scope not in character.STYLE_SCOPES:
+        raise HTTPException(422, f"scope 必须是 {character.STYLE_SCOPES} 之一：{scope}")
+    return {"anchors": character.list_style_anchors(scope),
             "max": STYLE_ANCHOR_MAX}
 
 
@@ -404,27 +408,30 @@ async def api_upload_style_anchor(request: Request,
                                   x_token: str = Header(None),
                                   x_actor_id: str = Header(None),
                                   x_actor_name: str = Header(None)):
-    """上传本地图建风格锚。multipart/form-data: name, note?, file。
+    """上传本地图建风格锚。multipart/form-data: name, scope, note?, file。
     任意分辨率（方舟对参考图自行缩放，无需与生图尺寸一致）；png/jpg/webp。
-    同名追加（演进史保留）；新名受上限守卫。"""
+    同名追加（演进史保留）；新名受上限守卫（容量按页独立计）。"""
     _check_token(request, x_token)
     from . import character
     form = await request.form()
     name = (form.get("name") or "").strip()
+    scope = (form.get("scope") or "scene").strip()
     if not name:
         raise HTTPException(422, "风格锚名必填")
+    if scope not in character.STYLE_SCOPES:
+        raise HTTPException(422, f"scope 必须是 {character.STYLE_SCOPES} 之一：{scope}")
     upload = form.get("file")
     if upload is None or not hasattr(upload, "filename"):
         raise HTTPException(422, "file 必填（png/jpg/webp）")
     suffix = Path(upload.filename).suffix.lower()
     if suffix not in (".png", ".jpg", ".jpeg", ".webp"):
         raise HTTPException(422, f"不支持的格式：{suffix}（png/jpg/webp）")
-    # 上限守卫：新名才计容量（同名追加不占新位）
-    existing = {a["character"] for a in character.list_style_anchors()}
+    # 上限守卫：新名才计容量（同名追加不占新位），容量按页独立
+    existing = {a["character"] for a in character.list_style_anchors(scope)}
     if name not in existing and len(existing) >= STYLE_ANCHOR_MAX:
         raise HTTPException(422,
-                            f"风格锚已达上限 {STYLE_ANCHOR_MAX} 个（删除旧锚或同名覆盖迭代）")
-    dest_dir = cfg.root / "exports" / "_style_anchors"
+                            f"该页风格锚已达上限 {STYLE_ANCHOR_MAX} 个（删除旧锚或同名覆盖迭代）")
+    dest_dir = cfg.root / "exports" / "_style_anchors" / scope
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{name}_{int(time.time())}{suffix}"
     content = await upload.read()
@@ -434,23 +441,27 @@ async def api_upload_style_anchor(request: Request,
     rel = dest.relative_to(cfg.root).as_posix()
     aid = character.set_anchor(name, rel, form.get("note") or "本地上传",
                                actor=_actor(x_actor_id, x_actor_name),
-                               kind="style")
-    return {"anchor_id": aid, "image_path": rel}
+                               kind="style", scope=scope)
+    return {"anchor_id": aid, "image_path": rel, "scope": scope}
 
 
 @router.delete("/api/style-anchors/{name}")
 def api_delete_style_anchor(name: str, request: Request,
-                            anchor_id: int = None,
+                            anchor_id: int = None, scope: str = "scene",
                             x_token: str = Header(None),
                             x_actor_id: str = Header(None),
                             x_actor_name: str = Header(None)):
-    """删除风格锚。?anchor_id= 只删一条（同名的某次迭代）；缺省删该名全部。"""
+    """删除风格锚。?anchor_id= 只删一条（同名的某次迭代）；缺省删该名全部。
+    scope 限定资产页（同名跨页不误删）。"""
     _check_token(request, x_token)
     from . import character
+    if scope not in character.STYLE_SCOPES:
+        raise HTTPException(422, f"scope 必须是 {character.STYLE_SCOPES} 之一：{scope}")
     deleted = character.delete_style_anchor(
-        name, anchor_id=anchor_id, actor=_actor(x_actor_id, x_actor_name))
+        name, anchor_id=anchor_id, actor=_actor(x_actor_id, x_actor_name),
+        scope=scope)
     if not deleted:
-        raise HTTPException(404, f"风格锚「{name}」不存在")
+        raise HTTPException(404, f"风格锚「{name}」不存在（scope={scope}）")
     return {"deleted": deleted}
 
 

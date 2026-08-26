@@ -61,7 +61,8 @@ def consistency_report(candidate_path, anchor_path) -> dict:
 
 # ---------- 锚点注册表 ----------
 # kind：character=角色形象锚 / style=风格锚（2026-08-26 风格固化方案A）。
-# 旧表无 kind 列 → init 时自动 ALTER 补列，默认 character。
+# scope：风格锚按资产页分库（scene|character|anim）——三页各自独立，互不可见
+#        （2026-08-26 用户确认：场景和角色的锚点不该通用）。旧 style 行迁移默认 scene。
 ANCHORS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS anchors (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,48 +71,62 @@ CREATE TABLE IF NOT EXISTS anchors (
     note        TEXT,                      -- 三视图/立绘/来源说明
     parent_anchor INTEGER,                 -- 晋升链：上一个锚点 id
     kind        TEXT DEFAULT 'character',  -- character | style
+    scope       TEXT DEFAULT 'scene',      -- 风格锚所属资产页（scene|character|anim）
     created_at  TEXT DEFAULT (datetime('now','localtime'))
 );
 """
 
 
+STYLE_SCOPES = ("scene", "character", "anim")
+
+
 def init_character():
     with _LOCK:
         _conn().executescript(ANCHORS_SCHEMA)
-        # 旧库迁移：无 kind 列则补（默认 character，旧行语义不变）
+        # 旧库迁移：无 kind/scope 列则补（默认值保旧行语义不变）
         cols = {r["name"] for r in
                 _conn().execute("PRAGMA table_info(anchors)").fetchall()}
         if "kind" not in cols:
             _conn().execute(
                 "ALTER TABLE anchors ADD COLUMN kind TEXT DEFAULT 'character'")
+        if "scope" not in cols:
+            _conn().execute(
+                "ALTER TABLE anchors ADD COLUMN scope TEXT DEFAULT 'scene'")
         _conn().commit()
 
 
 def set_anchor(character: str, image_path: str, note: str = "",
                actor: dict = None, from_candidate: str = None,
-               kind: str = "character"):
+               kind: str = "character", scope: str = "scene"):
     """设定/更新锚点。from_candidate: "run_id#idx"（从拍板候选晋升，记链）。
-    kind: character（角色形象锚）| style（风格锚，画风固化参考）。"""
+    kind: character（角色形象锚）| style（风格锚，画风固化参考）。
+    scope: 风格锚归属资产页（scene|character|anim），仅 kind=style 时有意义。"""
     init_character()
+    if kind == "style" and scope not in STYLE_SCOPES:
+        raise ValueError(f"scope 必须是 {STYLE_SCOPES} 之一：{scope}")
     parent = None
     if from_candidate:
         run_id, idx = from_candidate.split("#")
         with _LOCK:
             row = _conn().execute(
                 "SELECT id FROM anchors WHERE character=? AND kind=?"
+                " AND (? IS NULL OR scope=?)"
                 " ORDER BY id DESC LIMIT 1",
-                (character, kind)).fetchone()
+                (character, kind, scope if kind == "style" else None,
+                 scope if kind == "style" else None)).fetchone()
         parent = row["id"] if row else None
     with _LOCK:
         cur = _conn().execute(
-            "INSERT INTO anchors (character, image_path, note, parent_anchor, kind)"
-            " VALUES (?,?,?,?,?)", (character, image_path, note, parent, kind))
+            "INSERT INTO anchors (character, image_path, note, parent_anchor,"
+            " kind, scope) VALUES (?,?,?,?,?,?)",
+            (character, image_path, note, parent, kind,
+             scope if kind == "style" else "scene"))
         _conn().commit()
         aid = cur.lastrowid
     log_event("anchor_set", actor, target_type=kind + "_anchor",
               target_id=character, detail={"anchor_id": aid,
               "image": image_path, "from_candidate": from_candidate,
-              "parent_anchor": parent, "kind": kind})
+              "parent_anchor": parent, "kind": kind, "scope": scope})
     return aid
 
 
@@ -135,14 +150,19 @@ def anchor_lineage(character: str, kind: str = "character"):
     return [dict(r) for r in rows]
 
 
-def list_style_anchors():
-    """风格锚库全列（表单选择器数据源）：每风格名取最新一张 + 张数。"""
+def list_style_anchors(scope: str = "scene"):
+    """风格锚库（表单选择器数据源）：某资产页的锚，每风格名最新一张 + 张数。
+    scope: scene|character|anim（三页独立库）。"""
     init_character()
+    if scope not in STYLE_SCOPES:
+        raise ValueError(f"scope 必须是 {STYLE_SCOPES} 之一：{scope}")
     with _LOCK:
         rows = _conn().execute(
             "SELECT character AS name, COUNT(*) AS total,"
             " MAX(id) AS latest_id FROM anchors WHERE kind='style'"
-            " GROUP BY character ORDER BY latest_id DESC").fetchall()
+            " AND scope=?"
+            " GROUP BY character ORDER BY latest_id DESC",
+            (scope,)).fetchall()
     out = []
     for r in rows:
         with _LOCK:
@@ -154,33 +174,34 @@ def list_style_anchors():
     return out
 
 
-def count_style_anchor_names() -> int:
-    """风格锚名数（库容量，上限守卫用）。"""
+def count_style_anchor_names(scope: str = "scene") -> int:
+    """风格锚名数（某页库容量，上限守卫用）。"""
     init_character()
     with _LOCK:
         row = _conn().execute(
             "SELECT COUNT(DISTINCT character) FROM anchors"
-            " WHERE kind='style'").fetchone()
+            " WHERE kind='style' AND scope=?", (scope,)).fetchone()
     return row[0] or 0
 
 
-def delete_style_anchor(name: str, anchor_id: int = None, actor: dict = None):
+def delete_style_anchor(name: str, anchor_id: int = None, actor: dict = None,
+                        scope: str = "scene"):
     """删除风格锚。anchor_id 空=删该名全部（常用）；给定=只删那一条。
-    返回删除条数。"""
+    scope 限定资产页（防止同名跨页误删）。返回删除条数。"""
     init_character()
     with _LOCK:
         if anchor_id:
             cur = _conn().execute(
-                "DELETE FROM anchors WHERE id=? AND kind='style'",
-                (anchor_id,))
+                "DELETE FROM anchors WHERE id=? AND kind='style' AND scope=?",
+                (anchor_id, scope))
         else:
             cur = _conn().execute(
-                "DELETE FROM anchors WHERE character=? AND kind='style'",
-                (name,))
+                "DELETE FROM anchors WHERE character=? AND kind='style'"
+                " AND scope=?", (name, scope))
         _conn().commit()
     log_event("style_anchor_deleted", actor, target_type="style_anchor",
               target_id=name, detail={"anchor_id": anchor_id,
-                                      "deleted": cur.rowcount})
+                                      "deleted": cur.rowcount, "scope": scope})
     return cur.rowcount
 
 

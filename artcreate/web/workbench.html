@@ -182,7 +182,7 @@
     </div>
     <!-- 管理面板：建立行（初始 3 行，可加到上限）+ 已有锚删除 -->
     <div id="anchor-panel" style="display:none;margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:8px;background:#191b1e">
-      <div style="font-size:12px;color:var(--dim);margin-bottom:8px">每行独立建立：填锚点名 + 选图（png/jpg/webp，任意分辨率）。同名再传 = 迭代该锚（历史保留，最新生效）。</div>
+      <div style="font-size:12px;color:var(--dim);margin-bottom:8px"><span id="anchor-panel-scope" style="color:var(--acc)">建立到：场景库</span> · 三页锚库各自独立。每行独立建立：填锚点名 + 选图（png/jpg/webp，任意分辨率）。同名再传 = 迭代该锚（历史保留，最新生效）。</div>
       <div id="anchor-rows"></div>
       <div style="display:flex;gap:8px;margin-top:8px">
         <button onclick="addAnchorRow()">+ 加一行</button>
@@ -1178,10 +1178,11 @@ async function fillFromRun(runId, meta) {
   document.getElementById('form-extra').style.display = '';
   document.getElementById('form-parent-info').textContent =
     `迭代自 run ${runId}（${meta ? meta.subject : spec.subject || ''}）——历史编译词已直达下方审核卡，可精修`;
-  // 风格参考回填：历史 spec 挂过的参考图按风格锚名重新选中（库中无则忽略）
+  // 风格参考回填：历史 spec 挂过的参考图按风格锚名重新选中（场景库内匹配，无则忽略）
   styleRefSets.f.clear();
+  const sceneAnchors = STYLE_ANCHORS.scene || [];
   for (const p of (spec.ref_images || [])) {
-    const hit = STYLE_ANCHORS.find(a => a.image_path === p);
+    const hit = sceneAnchors.find(a => a.image_path === p);
     if (hit) styleRefSets.f.add(hit.character);
   }
   saveStyleRefState('f');
@@ -1223,14 +1224,15 @@ function providerOverride() {
 })();
 
 // ---- 风格锚（画风固化：参考图随编译词直送生图模型，与提示词双保险） ----
-// 三页独立选择（场景 f / 角色 c / 动作 anim），localStorage 持久化——切页/刷新不丢
-let STYLE_ANCHORS = [];          // 风格锚库（每名最新一张）
+// 三页独立选择 + 独立锚库（scope：scene/character/anim 各一份，互不可见），localStorage 持久化
+let STYLE_ANCHORS = {};          // 按 scope 分库：{scene:[], character:[], anim:[]}（每名最新一张）
+let ANCHOR_MAX = 12;
 const STYLE_REF_KEY = 'ac-style-refs';
-// 页面标识 → {listId, selSet, storeKey}
+// 页面标识 → {listId, selSet, storeKey（=后端 scope）, capId, zoneId}
 const STYLE_REF_PAGES = {
-  f:    { listId: 'style-ref-list',      storeKey: 'scene' },
-  c:    { listId: 'char-style-ref-list', storeKey: 'character' },
-  anim: { listId: 'anim-style-ref-list', storeKey: 'anim' },
+  f:    { listId: 'style-ref-list',      storeKey: 'scene',     capId: 'anchor-cap',      zoneId: 'style-ref-zone' },
+  c:    { listId: 'char-style-ref-list', storeKey: 'character', capId: 'char-anchor-cap', zoneId: 'char-style-ref-zone' },
+  anim: { listId: 'anim-style-ref-list', storeKey: 'anim',      capId: 'anim-anchor-cap', zoneId: 'anim-style-ref-zone' },
 };
 function loadStyleRefState() {
   let saved = {};
@@ -1253,33 +1255,39 @@ function refImgUrl(image_path) {
     ? `/api/images/${encodeURIComponent(parts[0])}/${parts[1]}/${parts[2]}` : '';
 }
 async function loadStyleAnchors() {
-  try {
-    const r = await fetch('/api/style-anchors', {headers: H()});
-    if (!r.ok) return;
-    const d = await r.json();
-    STYLE_ANCHORS = d.anchors || [];
-    ANCHOR_MAX = d.max || 12;
-  } catch (e) { return; }
+  // 三页各自拉库（scope 独立）；失败容错——页缺省为空数组
+  const scopes = [...new Set(Object.values(STYLE_REF_PAGES).map(p => p.storeKey))];
+  const results = await Promise.all(scopes.map(async sc => {
+    try {
+      const r = await fetch(`/api/style-anchors?scope=${sc}`, {headers: H()});
+      if (!r.ok) return [sc, {anchors: [], max: ANCHOR_MAX}];
+      return [sc, await r.json()];
+    } catch (e) { return [sc, {anchors: [], max: ANCHOR_MAX}]; }
+  }));
+  for (const [sc, d] of results) {
+    STYLE_ANCHORS[sc] = d.anchors || [];
+    ANCHOR_MAX = d.max || ANCHOR_MAX;
+  }
   // 库中已不存在的锚名清出选中态（防悬挂引用）
-  const names = new Set(STYLE_ANCHORS.map(a => a.character));
-  for (const set of Object.values(styleRefSets))
-    for (const n of [...set]) if (!names.has(n)) set.delete(n);
-  const capText = `锚库 ${STYLE_ANCHORS.length}/${ANCHOR_MAX} · 单次生成最多挂 3 张`;
-  for (const cid of ['anchor-cap', 'char-anchor-cap', 'anim-anchor-cap']) {
-    const cap = document.getElementById(cid);
-    if (cap) cap.textContent = capText;
+  for (const [k, cfgp] of Object.entries(STYLE_REF_PAGES)) {
+    const names = new Set((STYLE_ANCHORS[cfgp.storeKey] || []).map(a => a.character));
+    for (const n of [...styleRefSets[k]]) if (!names.has(n)) styleRefSets[k].delete(n);
+    const cap = document.getElementById(cfgp.capId);
+    if (cap) cap.textContent = `锚库 ${(STYLE_ANCHORS[cfgp.storeKey] || []).length}/${ANCHOR_MAX} · 单次生成最多挂 3 张`;
   }
   for (const p of Object.keys(STYLE_REF_PAGES)) renderStyleRefs(p);
 }
 function renderStyleRefs(prefix) {
-  const list = document.getElementById(STYLE_REF_PAGES[prefix].listId);
+  const cfgp = STYLE_REF_PAGES[prefix];
+  const list = document.getElementById(cfgp.listId);
   if (!list) return;
+  const anchors = STYLE_ANCHORS[cfgp.storeKey] || [];
   const selSet = styleRefSets[prefix];
-  if (!STYLE_ANCHORS.length) {
+  if (!anchors.length) {
     list.innerHTML = '<span style="font-size:12px;color:var(--dim)">暂无风格锚——点上方「建立图片画风锚点…」上传本地图</span>';
     return;
   }
-  list.innerHTML = STYLE_ANCHORS.map(a => {
+  list.innerHTML = anchors.map(a => {
     const url = refImgUrl(a.image_path);
     const on = selSet.has(a.character);
     return `
@@ -1292,7 +1300,7 @@ function renderStyleRefs(prefix) {
         <div style="font-size:11px;text-align:center;margin-top:2px;color:${on ? 'var(--acc)' : 'var(--dim)'}">${a.character}${a.total > 1 ? '·' + a.total : ''}</div>
       </div>
       <div style="text-align:center;margin-top:1px">
-        <span onclick="deleteStyleAnchor('${a.character}')" title="删除该锚（全部迭代）"
+        <span onclick="deleteStyleAnchor('${prefix}','${a.character}')" title="删除该锚（全部迭代）"
           style="cursor:pointer;font-size:11px;color:var(--bad);user-select:none">删除</span>
       </div>
     </div>`;
@@ -1309,13 +1317,15 @@ function toggleStyleRef(prefix, name) {
   renderStyleRefs(prefix);
 }
 function selectedRefs(prefix) {
-  // Set<风格锚名> → 最新一张 image_path 列表（生图用参考图）
-  return [...styleRefSets[prefix]].map(n => (STYLE_ANCHORS.find(a => a.character === n) || {}).image_path)
+  // Set<风格锚名> → 该页库中最新一张 image_path 列表（生图用参考图）
+  const sc = STYLE_REF_PAGES[prefix].storeKey;
+  return [...styleRefSets[prefix]].map(n => ((STYLE_ANCHORS[sc] || []).find(a => a.character === n) || {}).image_path)
     .filter(Boolean);
 }
 // ---- 风格锚管理面板（显式建立/删除）----
-// 单例面板：三个资产页各有入口按钮，点谁面板就挂到谁的参考区下方
-let ANCHOR_MAX = 12;
+// 单例面板：三个资产页各有入口按钮，点谁面板就挂到谁的参考区下方；
+// 面板归属页决定新锚写入哪个库（scope），三页库独立互不可见
+let anchorPanelScope = 'scene';   // 面板当前挂靠页的 scope
 function toggleAnchorPanel(zoneId) {
   const p = document.getElementById('anchor-panel');
   const zone = document.getElementById(zoneId || 'style-ref-zone');
@@ -1323,6 +1333,11 @@ function toggleAnchorPanel(zoneId) {
   if (openedHere) { p.style.display = 'none'; return; }   // 同页再点 = 收起
   zone.appendChild(p);   // 面板移动到当前页
   p.style.display = '';
+  // 由挂靠 zone 反查该页 scope
+  const page = Object.values(STYLE_REF_PAGES).find(cfg => cfg.zoneId === zone.id);
+  anchorPanelScope = page ? page.storeKey : 'scene';
+  document.getElementById('anchor-panel-scope').textContent =
+    `建立到：${{scene:'场景库', character:'角色库', anim:'动作库'}[anchorPanelScope]}`;
   if (!document.getElementById('anchor-rows').children.length)
     for (let i = 0; i < 3; i++) addAnchorRow();   // 初始 3 行
 }
@@ -1349,6 +1364,7 @@ async function submitAnchorRow(btn) {
   btn.disabled = true; msg.textContent = '上传中…';
   const fd = new FormData();
   fd.append('name', name);
+  fd.append('scope', anchorPanelScope);
   fd.append('note', `管理面板 ${file.name}`);
   fd.append('file', file);
   try {
@@ -1372,9 +1388,11 @@ async function submitAnchorRow(btn) {
     btn.disabled = false;
   }
 }
-async function deleteStyleAnchor(name) {
+async function deleteStyleAnchor(prefix, name) {
+  // prefix 定位页（scope）——只删该页库中的同名锚，其他页不受影响
+  const sc = STYLE_REF_PAGES[prefix].storeKey;
   if (!await acConfirm({title: '删除风格锚', message: `删除「${name}」？该锚全部迭代将移除，挂载中的引用自动清出。`, okText: '删除', danger: true})) return;
-  const r = await fetch(`/api/style-anchors/${encodeURIComponent(name)}`, {method: 'DELETE', headers: H()});
+  const r = await fetch(`/api/style-anchors/${encodeURIComponent(name)}?scope=${sc}`, {method: 'DELETE', headers: H()});
   const d = await r.json().catch(() => ({}));
   if (r.ok) {
     toast(`已删除「${name}」（${d.deleted} 条）`, 'ok');
