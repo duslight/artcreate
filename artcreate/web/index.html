@@ -78,6 +78,7 @@
   <div class="panel main" id="main"><div class="empty">左侧选择一次 run</div></div>
 </div>
 <dialog id="zoom"><img id="zoomImg" onclick="this.parentElement.close()"></dialog>
+<script src="/dlg.js"></script>
 <script>
 let curRun = null;
 
@@ -227,7 +228,7 @@ function loadThisRun() {
 }
 
 async function regen() {
-  if (!confirm('同 spec 再生成一批？（revision 不变，记录迭代链）')) return;
+  if (!await acConfirm({title: '再次生成', message: '同 spec 再生成一批？（revision 不变，记录迭代链）', okText: '生成'})) return;
   const r = await fetch(`/api/runs/${curRun}/regenerate`, {method:'POST', headers:H()});
   if (r.ok) { const j = await r.json(); toast('已入队，任务 #' + j.job_id, 'ok'); loadRuns(); }
   else toast('入队失败', 'bad');
@@ -237,7 +238,7 @@ async function makeAnchor(idx, btn) {
   // 设为锚点：拍板候选晋升角色形象基准（后续 pose 批量/变体都参考它）
   const d = curData;
   if (!d) return;
-  const name = prompt('设为哪个角色的锚点？（角色名 = 库内组织名，例：alice）', d.run.subject);
+  const name = await acPrompt({title: '设为角色锚点', message: '角色名 = 库内组织名（例：alice），锚点将作为该角色的形象基准', placeholder: '角色名', value: d.run.subject});
   if (name === null) return;
   const charName = name.trim();
   if (!charName) { toast('角色名不能为空', 'bad'); return; }
@@ -275,7 +276,7 @@ async function act(kind, idx, btn) {
   if (card) card.querySelectorAll('.bar button').forEach(b => b.disabled = true);
   try {
     if (kind === 'reject') {
-      const code = prompt('拒绝码（style_drift / composition / constraint_violation / other）:', 'manual');
+      const code = await acPrompt({title: '拒绝候选 #' + idx, message: '拒绝码：style_drift / composition / constraint_violation / other', value: 'manual'});
       if (code === null) { if (card) card.querySelectorAll('.bar button').forEach(b => b.disabled = false); return; }
       await fetch(`/api/runs/${curRun}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
       toast(`#${idx} 已拒绝`, 'info');

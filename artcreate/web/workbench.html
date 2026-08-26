@@ -376,6 +376,7 @@
 
 <div id="page-lineage" style="display:none"></div>
 
+<script src="/dlg.js"></script>
 <script>
 let DICT = null;
 let axisSel = {};
@@ -476,8 +477,8 @@ async function loadProp(status) {
     </div>`).join('') || '<div class="empty">暂无' + (propFilter==='pending'?'提案（蒸馏会自动产出，也可手动触发）':'记录') + '</div>';
 }
 async function actProp(pid, kind) {
-  if (kind === 'reject' && !confirm('驳回该提案？')) return;
-  if (kind === 'approve' && !confirm('晋升为新选项？全部用户表单将出现该选项，且写入 derived 版本库')) return;
+  if (kind === 'reject' && !await acConfirm({title: '驳回提案', message: '驳回该提案？', okText: '驳回', danger: true})) return;
+  if (kind === 'approve' && !await acConfirm({title: '晋升选项', message: '晋升为新选项？全部用户表单将出现该选项，且写入 derived 版本库', okText: '晋升'})) return;
   const r = await fetch(`/api/proposals/${pid}/${kind}`, {method:'POST', headers:H()});
   const d = await r.json();
   if (r.status !== 200) { toast('失败：' + JSON.stringify(d.detail || d), 'bad'); return; }
@@ -1052,7 +1053,7 @@ async function liveAct(kind, idx, btn) {
   if (card) card.querySelectorAll('.lbar button').forEach(b => b.disabled = true);
   try {
     if (kind === 'reject') {
-      const code = prompt('拒绝码（style_drift / composition / constraint_violation / other）:', 'manual');
+      const code = await acPrompt({title: '拒绝候选 #' + idx, message: '拒绝码：style_drift / composition / constraint_violation / other', value: 'manual'});
       if (code === null) { if (card) card.querySelectorAll('.lbar button').forEach(b => b.disabled = false); return; }
       await fetch(`/api/runs/${runId}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
       toast(`#${idx} 已拒绝`, 'info');
@@ -1078,7 +1079,7 @@ async function liveMakeAnchor(idx, runId, btn) {
   // 设为锚点（工作台候选卡）：晋升角色形象基准，后续动作批量/变体以它为参考图
   const grid = document.getElementById('live-grid');
   const subject = grid.dataset.subject || '';
-  const name = prompt('设为哪个角色的锚点？（角色名 = 库内组织名）', subject);
+  const name = await acPrompt({title: '设为角色锚点', message: '角色名 = 库内组织名，锚点将作为该角色的形象基准', placeholder: '角色名', value: subject});
   if (name === null) return;
   const charName = name.trim();
   if (!charName) { toast('角色名不能为空', 'bad'); return; }
@@ -1359,7 +1360,7 @@ async function submitAnchorRow(btn) {
   }
 }
 async function deleteStyleAnchor(name) {
-  if (!confirm(`删除风格锚「${name}」？该锚全部迭代将移除，挂载中的引用自动清出。`)) return;
+  if (!await acConfirm({title: '删除风格锚', message: `删除「${name}」？该锚全部迭代将移除，挂载中的引用自动清出。`, okText: '删除', danger: true})) return;
   const r = await fetch(`/api/style-anchors/${encodeURIComponent(name)}`, {method: 'DELETE', headers: H()});
   const d = await r.json().catch(() => ({}));
   if (r.ok) {
