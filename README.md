@@ -33,7 +33,7 @@
 → "Strictly avoid: ..." 排除块 → 参考图分工说明句
 ```
 
-约束先于 LLM 扩展注入，轴正向同时作为扩展的必守上下文——不然模型自由发挥的环境词会把「纯色简洁背景」这类轴顶掉。审核卡里确认过的编译词原样执行（审核直通），不存在「审核的和执行的不一致」。强制的默认排除项走配置：场景和怪物默认排除 people，角色页不排，见 `base.yaml` 的 `forced_negative`。
+约束先于 LLM 扩展注入。审核卡里确认过的编译词原样执行（审核直通）。
 
 审核卡提供完整 prompt 的中文翻译和逐段来源解释。精修有两种：整段直改（改中文全文，LLM 逐句对齐只重译改动部分），或分段模式（改某段中文，对应英文段同步重译）。
 
@@ -57,7 +57,7 @@ cp .env.example .env        # 填 ARK_API_KEY 和 ZHIPU_API_KEY
 python -m artcreate serve   # http://127.0.0.1:8870/workbench.html
 ```
 
-生图每张约 0.2 元。数量默认 1，先看效果再加量。
+生图每张约 0.26 元。数量默认 1，先看效果再加量。
 
 服务器部署见 `deploy/README.md`（systemd、令牌、备份）。公网访问须配 `WORKBENCH_TOKEN`，手机端用 `http://<IP>:8870/workbench.html?token=<令牌>` 直连。
 
@@ -78,12 +78,6 @@ python -m artcreate poses <char> idle,walk  # 动作批量
 python -m artcreate distill                 # 蒸馏拍板经验
 python -m artcreate proposals               # 看晋升提案 / promote / demote
 ```
-
-## 配置
-
-三层深合并：`artcreate/base.yaml`（出厂字典）→ `project.yaml`（项目定制）→ `derived/*.yaml`（经验晋升，distill 自动写）。dict 按键覆盖，列表按 id 合并。想给本项目加一条「教堂」人工痕迹选项，在 project.yaml 里对同 id 轴追加 option 即可，base 不用动。
-
-字典涵盖尺寸、画风、资产类型、氛围、约束轴、角色动作、命名后缀。拍板时的自由文本理由会被 distill 蒸馏，LLM 判定后晋升为字典选项，git 自动留痕，可随时 promote/demote。
 
 ## 密钥
 
