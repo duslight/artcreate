@@ -507,11 +507,22 @@ function tok() { const t = localStorage.getItem('ac-token'); return t ? {'X-Toke
 function H() { return { ...actorHeaders(), ...tok() }; }
 
 // ---- 页面切换 ----
+function currentPage() {
+  const on = document.querySelector('#nav-new,#nav-pose,#nav-monster,#nav-anim,#nav-jobs,#nav-feed,#nav-prop,#nav-review');
+  return on ? on.classList.contains('on') ? on.id.replace('nav-', '') : 'new' : 'new';
+}
 function show(p) {
   for (const x of ['new', 'pose', 'monster', 'anim', 'jobs', 'feed', 'prop', 'review']) {
     const pg = document.getElementById('page-' + x);
     if (pg) pg.style.display = x === p ? '' : 'none';
     document.getElementById('nav-' + x).classList.toggle('on', x === p);
+  }
+  // 共享区块按属主隔离：审核卡/出图区记录打开时所在页，切走隐藏、切回恢复
+  for (const id of ['review-card', 'live-zone']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (el.dataset.ownerPage)   // 有属主才管（未打开/关闭态不动）
+      el.style.display = el.dataset.ownerPage === p ? '' : 'none';
   }
   if (p === 'jobs') loadJobs(true);
   if (p === 'feed') loadFeed();
@@ -800,12 +811,15 @@ function renderReviewCard(d) {
   const escBtn = document.getElementById('rz-recompile');
   if (escBtn) escBtn.style.display = 'none';   // 逃生口只在直达态显示
   const card = document.getElementById('review-card');
+  card.dataset.ownerPage = currentPage();   // 记录属主页：切页隔离显示
   card.style.display = '';
   // 滚到卡片底部：审核操作按钮（确认生成/回去修改）在卡尾，落点在视口下方
   card.scrollIntoView({behavior: 'smooth', block: 'end'});
 }
 function closeReview() {
-  document.getElementById('review-card').style.display = 'none';
+  const card = document.getElementById('review-card');
+  card.style.display = 'none';
+  delete card.dataset.ownerPage;   // 清属主：关闭态不受切页影响
   pendingSpec = null;
   loadedCompile = null;   // 关卡即弃：下次重编或重载
   refineOn = false;
@@ -1082,6 +1096,7 @@ let trackTimer = null;
 function trackJob(jobId) {
   clearInterval(trackTimer);
   const zone = document.getElementById('live-zone');
+  zone.dataset.ownerPage = currentPage();   // 记录属主页：切页隔离显示
   zone.style.display = '';
   trackTimer = setInterval(async () => {
     const j = await (await fetch(`/api/jobs/${jobId}`, {headers: H()})).json();

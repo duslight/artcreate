@@ -88,7 +88,8 @@ def check_size(img_bgra: np.ndarray, th: dict, expect_size: str):
 def gate_image(image_path, expect_size: str, art_style: str = "pixel_classic"):
     """单图四项检查。image_path: Path 或 str。"""
     th = _thresholds(art_style)
-    img = cv2.imread(str(image_path), cv2.IMREAD_UNCHANGED)
+    from ..tools.postprocess import imread_unicode   # Windows 中文路径安全
+    img = imread_unicode(image_path)
     if img is None:
         return {"pass": False,
                 "checks": [{"name": "readable", "pass": False,

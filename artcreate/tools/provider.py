@@ -64,11 +64,13 @@ def _gen_ark(conf, prompt, size, count, ref_images):
     cfg = get_config()
     image_param = None
     if ref_images:
-        refs = [ref_images] if isinstance(ref_images, str) else list(ref_images)
+        refs = [_to_data_uri(r) for r in
+                ([ref_images] if isinstance(ref_images, str) else list(ref_images))]
         if len(refs) > 14:
             raise ProviderError("TOO_MANY_REFS", "参考图上限 14 张（D19 实测）")
         cfg.validate_size(size, with_ref=True)
-        image_param = refs[0] if len(refs) == 1 else [_to_data_uri(r) for r in refs]
+        # 全部转 data URI（单张曾原样直传本地路径 → 方舟报 invalid url）
+        image_param = refs[0] if len(refs) == 1 else refs
 
     urls = []
     for _ in range(count):

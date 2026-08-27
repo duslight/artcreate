@@ -44,8 +44,9 @@ def hamming(a: int, b: int) -> int:
 
 def consistency_report(candidate_path, anchor_path) -> dict:
     """候选 vs 锚点一致性。返回 {distance, verdict, hint}。"""
-    c = cv2.imread(str(candidate_path))
-    a = cv2.imread(str(anchor_path))
+    from .tools.postprocess import imread_unicode   # Windows 中文路径安全
+    c = imread_unicode(candidate_path)
+    a = imread_unicode(anchor_path)
     if c is None or a is None:
         return {"distance": None, "verdict": "error",
                 "hint": f"图读取失败（anchor={anchor_path}）"}
