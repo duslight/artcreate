@@ -1161,7 +1161,19 @@ async function liveAct(kind, idx, btn) {
     if (card) card.querySelectorAll('.lbar button').forEach(b => b.disabled = false);
     return;
   }
-  loadLiveCandidates(runId);
+  // 处置后检查：无待定候选（全部接受/拒绝完毕）→ 收起出图区；仍有待定 → 刷新列表继续
+  const d = await (await fetch(`/api/runs/${runId}/candidates`, {headers: H()})).json();
+  const pending = (d.candidates || []).filter(c => c.status === 'generated' || c.status === 'gated');
+  if (pending.length) {
+    loadLiveCandidates(runId);
+    toast(`还剩 ${pending.length} 张待处置`, 'info');
+  } else {
+    const zone = document.getElementById('live-zone');
+    zone.style.display = 'none';
+    delete zone.dataset.ownerPage;
+    clearInterval(trackTimer);
+    toast('本次生成已收起——结果见「任务队列/历史任务」，定稿在 exports/final/', 'info');
+  }
 }
 async function refineThisRun(runId, btn) {
   if (btn) btn.disabled = true;
