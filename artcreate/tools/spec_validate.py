@@ -11,6 +11,7 @@
 from .config import get_config
 
 # spec 顶层合法字段（与 compiler/__main__ 消费侧对齐维护）
+# extra_prompt：历史字段，编译通道已删（2026-08-27），保留白名单兼容旧 spec 静默忽略
 TOP_FIELDS = {
     "subject", "revision", "description", "extra_prompt",
     "asset_type", "mood", "art_style", "size", "count",

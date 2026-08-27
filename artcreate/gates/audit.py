@@ -27,7 +27,6 @@ The prompt below has system parts REMOVED (media prefix, style suffix,
 MAPPING RULES — how form items appear (do NOT report as missing):
 - description → ENGLISH PARAPHRASE near the start (faithful meaning, not
   word-for-word). Paraphrase ≠ mistranslation.
-- extra_prompt → English paraphrase if non-empty.
 Check ONLY user-input fidelity. Ignore size/count (not prompt content).
 Answer STRICT JSON only:
 {{
@@ -42,7 +41,7 @@ def audit_compilation(spec: dict, compiled_prompt: str,
                       segments: dict = None) -> dict:
     """L2：返回 {coverage, intrusion, verdict}。失败返回 verdict=error（不阻断）。
     程序侧剥离全部系统/派生段（媒介前缀/扩展词/氛围/正向引导/负向块/画风尾块），
-    LLM 只审用户域两段：scene_core（对 description 的忠实转译）与 extra（细化项）。
+    LLM 只审用户域：scene_core（对 description 的忠实转译）与自由约束。
     小模型指令遵循不稳——能程序侧解决的绝不托付 prompt。"""
     cfg = get_config()
     audited = compiled_prompt
@@ -52,7 +51,6 @@ def audit_compilation(spec: dict, compiled_prompt: str,
         for part in (style["suffix"], segments.get("media_prefix"),
                      segments.get("scene_expansion"), segments.get("mood_inject"),
                      segments.get("atmosphere_notes"),
-                     segments.get("extra_en"),
                      segments.get("free_constraints_en"),
                      *segments.get("positives", [])):
             if part:

@@ -16,7 +16,7 @@ Compile the Chinese form below into ENGLISH prompt components for an image model
 
 Context you MUST respect (expansion must not contradict any of them):
 - User scene description: {description}
-- User extra detail request: {extra}
+- REQUIRED positive constraints (from the user's axis choices and free constraints — every expansion phrase must be consistent with them; if a simple/flat background is required, do NOT expand environment or background details at all): {positives}
 - Selected mood (lighting/atmosphere direction): {mood_desc}
 - Asset type: {asset_type_desc}
 - Art style direction: {style_hint}
@@ -26,11 +26,10 @@ Context you MUST respect (expansion must not contradict any of them):
 
 Output STRICT JSON only, with these keys:
 1. "scene_core_en": faithful ENGLISH translation of the scene description. Translate only, do NOT add or remove content.
-2. "scene_expansion": 3-6 concrete visual NOUN-phrases (furniture, objects, materials, architecture) that naturally belong to the scene, consistent with the mood, the extra detail request and the style. Comma separated. No verbs of people, no story. Never mention people. Never include anything from the EXCLUDE list or the negative constraints.
+2. "scene_expansion": 3-6 concrete visual NOUN-phrases that naturally belong to the scene, consistent with the mood, the style AND the REQUIRED positive constraints. Comma separated. No story. Never include anything from the EXCLUDE list or the negative constraints.
 3. "atmosphere_notes": 1-2 short phrases about stillness/quiet unease/restrained mood (e.g. "faint drifting dust", "unnatural stillness").
-4. "extra_en": faithful ENGLISH translation of the extra detail request. Empty string if none.
-5. "constraints_en": faithful ENGLISH translation of the free-text constraints (things to avoid or enforce). Empty string if none.
-6. "negative_en": faithful ENGLISH translation of the negative free-text constraints, as bare noun phrases WITHOUT negation words (e.g. "不要蜘蛛" → "spiders"). Empty string if none.
+4. "constraints_en": faithful ENGLISH translation of the free-text constraints ONLY. Do NOT restate or translate the REQUIRED positive constraints above. Empty string if the free-text constraints are empty.
+5. "negative_en": faithful ENGLISH translation of the negative free-text constraints, as bare noun phrases WITHOUT negation words (e.g. "不要蜘蛛" → "spiders"). Empty string if none.
 
 Rules:
 - Keep every phrase under 8 words.
@@ -67,13 +66,29 @@ def resolve_constraints(spec: dict):
     return negatives, positives
 
 
+def _mode_of(spec: dict) -> str:
+    """推断 spec 的页面模式：character/monster/scene（供按模式配置项查询）。"""
+    atype = spec.get("asset_type", "")
+    if str(atype).startswith("monster"):
+        return "monster"
+    if str(atype).startswith("character") or (spec.get("character") or {}).get("anchor") \
+            or (spec.get("character") or {}).get("sheet"):
+        return "character"
+    return "scene"
+
+
+def _forced_negative(cfg, mode: str) -> list:
+    """模式级强制负向（base/project yaml 的 forced_negative 段，可配置）。"""
+    conf = cfg._raw.get("forced_negative", {}) or {}
+    return [str(x) for x in (conf.get(mode) or [])]
+
+
 def compile_prompt(spec: dict) -> dict:
     """spec → {"prompt": str, "segments": {...}}。
     segments 供 lint/消融实验（D-黑箱调试法）与 manifest（D19）使用。"""
     cfg = get_config()
     d = cfg.defaults
     desc = spec.get("description", "").strip()
-    extra = spec.get("extra_prompt", "").strip()
     asset_type = spec.get("asset_type", d["asset_type"])
     mood = spec.get("mood", d["mood"])
     art_style = spec.get("art_style", d["art_style"])
@@ -85,12 +100,14 @@ def compile_prompt(spec: dict) -> dict:
     mood_inject = cfg.moods.get(mood, {}).get("inject", "")
     negatives, positives = resolve_constraints(spec)
     asset_conf = cfg.asset_types.get(asset_type) or cfg.asset_types[d["asset_type"]]
+    mode = _mode_of(spec)
 
-    core_en, expansion, atmosphere, extra_en, cons_en, neg_en = "", "", "", "", "", ""
+    core_en, expansion, atmosphere, cons_en, neg_en = "", "", "", "", ""
     try:
         prompt = (META_PROMPT
                   .replace("{description}", desc)
-                  .replace("{extra}", extra or "(none)")
+                  .replace("{positives}",
+                           ", ".join(positives) if positives else "(none)")
                   .replace("{mood_desc}", mood_inject or "(none)")
                   .replace("{asset_type_desc}", asset_conf["prefix"])
                   .replace("{style_hint}", style["compiler_hint"])
@@ -107,31 +124,34 @@ def compile_prompt(spec: dict) -> dict:
             core_en = (parsed.get("scene_core_en", "") or "").strip()
             expansion = (parsed.get("scene_expansion", "") or "").strip()
             atmosphere = (parsed.get("atmosphere_notes", "") or "").strip()
-            extra_en = (parsed.get("extra_en", "") or "").strip()
             cons_en = (parsed.get("constraints_en", "") or "").strip()
             neg_en = (parsed.get("negative_en", "") or "").strip()
     except Exception:
         pass  # 编译降级不报错（v1 行为：中文直通）
 
+    # 注入顺序（2026-08-27 重构）：prefix → 场景翻译 → 约束轴正向 + 正向自由约束
+    # → LLM 扩展 → 氛围。约束先于扩展注入，正向约束同时作为 META_PROMPT
+    # 必守上下文（扩展不得与之冲突：角色"纯色简洁"背景轴 vs 自由扩展环境词）
+    # 注意：LLM 偶尔把 REQUIRED positives 上下文复述进 constraints_en（轴词翻倍），
+    # 仅当用户真的写了自由约束时才采信 cons_en
     parts = [asset_conf["prefix"]]
     parts.append(core_en if core_en else desc)
-    parts.append(expansion)
-    parts.append(mood_inject)
-    parts.append(atmosphere)
-    parts.append(extra_en if extra_en else extra)
     parts += positives
-    # 正向自由约束：忠实翻译后进正向区（历史上误入负向块=禁止自己要求的东西，修正）
-    if cons_en:
+    if free_constraints and cons_en:
         parts.append(cons_en)
     elif free_constraints:
         parts.append(free_constraints)   # LLM 失败降级：中文直通
+    parts.append(expansion)
+    parts.append(mood_inject)
+    parts.append(atmosphere)
     parts.append(style["suffix"])
 
     # ---- 负向排除块：拆词 → 全局去重 → 句法隔离放真句尾 ----
-    # 词表来源：轴负向 + 默认 people + 负向自由约束（LLM 裸名词串或中文降级）
+    # 词表来源：轴负向 + 模式强制负向（forced_negative，配置化）+ 负向自由约束
+    # （LLM 裸名词串或中文降级）
     def _split_items(s: str) -> list:
         return [t.strip() for t in re.split(r"[，,、]", s) if t.strip()]
-    neg_raw = list(negatives)
+    neg_raw = list(negatives) + _forced_negative(cfg, mode)
     if neg_en:
         neg_raw += _split_items(neg_en)
     elif free_negative:
@@ -142,8 +162,6 @@ def compile_prompt(spec: dict) -> dict:
         if key not in seen:
             seen.add(key)
             neg_items.append(item)
-    if "people" not in seen:
-        neg_items.append("people")
 
     # 主句（正向流）与排除块用句号隔离：T5 编码器把 "Strictly avoid:" 句
     # 当独立指令处理，逗号长流里排除词会被画风词稀释（2026-08-26 实测回归）
@@ -160,12 +178,11 @@ def compile_prompt(spec: dict) -> dict:
         "segments": {  # 分段结构落 manifest（消融实验/溯源 D19）
             "media_prefix": asset_conf["prefix"],
             "scene_core_en": core_en or desc,
+            "positives": positives,
+            "free_constraints_en": (cons_en if free_constraints else "") or free_constraints,
             "scene_expansion": expansion,
             "mood_inject": mood_inject,
             "atmosphere_notes": atmosphere,
-            "extra_en": extra_en or extra,
-            "positives": positives,
-            "free_constraints_en": cons_en or free_constraints,
             "free_negative_en": neg_en or free_negative,
             "negative_block": neg_items,
             "style_suffix": style["suffix"],

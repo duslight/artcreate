@@ -232,12 +232,15 @@ def character_spec(character: str, description: str, sheet: str = "立绘",
     if anchor and anchor.get("image_path"):
         spec["ref_images"] = [anchor["image_path"]]
     if sheet:
-        spec["extra_prompt"] = (
-            {"三视图": "character turnaround sheet, front side back views, "
-                       "full body, consistent proportions",
-             "立绘": "full body standing pose, clean silhouette, centered",
-             "动作": "dynamic action pose, expressive gesture"}[sheet]
-            + (f"，{spec.get('extra_prompt') or ''}" if spec.get("extra_prompt") else ""))
+        # sheet 构图语料走自由约束（编译进正向区；extra_prompt 通道已删）
+        sheet_text = {
+            "三视图": "character turnaround sheet, front side back views, "
+                      "full body, consistent proportions",
+            "立绘": "full body standing pose, clean silhouette, centered",
+            "动作": "dynamic action pose, expressive gesture"}[sheet]
+        cons = spec.setdefault("constraints", {})
+        cons["free_text"] = ", ".join(
+            x for x in [sheet_text, cons.get("free_text")] if x)
     return spec
 
 
@@ -261,17 +264,21 @@ def pose_batch_spec(character: str, poses: list, description: str = "",
     for pose in poses:
         if pose not in pose_dict:
             raise ValueError(f"未知动作 '{pose}'（现有：{sorted(pose_dict)}）")
+        # 动作词走自由约束（编译翻译进正向区；extra_prompt 通道已删）。
+        # inject 为字典预写英文四要素描述，LLM 对英文"忠实翻译"近似原样
+        cons = (kw.get("constraints") or {}).copy()
+        cons["free_text"] = ", ".join(
+            x for x in [pose_dict[pose]["inject"],
+                        "dynamic action pose, expressive gesture",
+                        cons.get("free_text")] if x)
         spec = {
             "subject": character,
             "description": description or f"{character} 动作变体",
             "asset_type": "card_art",
             "count": count_each,
-            "constraints": {"axis_sel": {}, "free_text": ""},
+            "constraints": cons,
             "ref_images": refs,
             "character": {"pose": pose, "sheet": "动作"},
-            # 动作词与 sheet 语料拼接（动作词在前，姿态语料兜底）
-            "extra_prompt": pose_dict[pose]["inject"]
-                           + ", dynamic action pose, expressive gesture",
         }
         spec.update(kw)
         out.append({"pose": pose, "spec": spec})

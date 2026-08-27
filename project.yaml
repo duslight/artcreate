@@ -15,7 +15,7 @@ defaults:
   art_style: pixel_classic
   mood: none
   size: "2688x1792"
-  count: 4            # D-设计原则：批量是默认，count=1 是特例
+  count: 1            # 2026-08-27：默认单张（先看效果再批量，批量属显式选择）
 
 # ---------- 项目级字典覆盖/追加示例（取消注释生效） ----------
 # sizes:
@@ -81,8 +81,8 @@ gates:
       edge_semi_alpha_max: 0.05
     size:
       exact_match: true         # 输出尺寸必须与 spec 声明一致
-  # 按画风覆盖示例：occult_card 手绘风放宽调色板
+  # 按画风覆盖：手绘类画风（暗黑地牢）放宽调色板（墨线渐变天然多色）
   by_style:
-    occult_card:
+    darkest_dungeon:
       palette:
         max_colors: 4096

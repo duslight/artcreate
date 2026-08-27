@@ -195,7 +195,7 @@
   <div class="row" style="margin-top:10px">
     <div><label>正向自由约束（描述"应该是什么"）</label>
       <textarea id="f-free" placeholder="例：画面重心偏左，右侧留白"></textarea></div>
-    <div><label>负向自由约束（不要出现什么）</label>
+    <div><label>负向自由约束（默认不出现人类）</label>
       <textarea id="f-fneg" placeholder="例：蜘蛛、篝火"></textarea></div>
   </div>
   <div id="form-extra" style="display:none;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">
@@ -284,7 +284,7 @@
     <div><label>尺寸</label><select id="m-size"></select></div>
     <div><label>数量 <span style="font-size:11px;color:var(--dim)">每 1 张图成本≈0.2 元</span></label><select id="m-count"></select></div>
   </div>
-  <label>约束轴（怪物适用：体型结构/尺度/威胁定位/标志特征/皮肤材质/威胁基调）</label>
+  <label>约束轴（怪物适用：背景/体型结构/尺度/威胁定位/标志特征/皮肤材质/威胁基调）</label>
   <div id="m-axes"></div>
   <!-- 参考图三槽位（本体/画风/姿态 各 1 张，分工直送：第1张管造型，其余管画风姿态） -->
   <div id="mon-ref-slots" style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
@@ -312,7 +312,7 @@
   <div class="row" style="margin-top:10px">
     <div><label>正向自由约束（描述"应该是什么"）</label>
       <textarea id="m-free" placeholder="例：背脊有火焰喷射孔，喉囊发亮"></textarea></div>
-    <div><label>负向自由约束（不要出现什么）</label>
+    <div><label>负向自由约束（默认不出现人类）</label>
       <textarea id="m-fneg" placeholder="例：翅膀、人形"></textarea></div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
@@ -596,11 +596,12 @@ function showDesc(sel) {
 async function loadDict() {
   DICT = await (await fetch('/api/form/dict', {headers: H()})).json();
   DICT_STORE['f-atype'] = DICT.asset_types;
-  DICT_STORE['f-style'] = DICT.art_styles;
+  const sceneStyles = stylesFor('scene');
+  DICT_STORE['f-style'] = sceneStyles;
   DICT_STORE['f-mood'] = DICT.moods;
   DICT_STORE['f-asuffix'] = DICT.asset_suffixes || {};
   fill('f-atype', DICT.asset_types, 'label');
-  fill('f-style', DICT.art_styles, 'label');
+  fill('f-style', sceneStyles, 'label');
   fill('f-mood', DICT.moods, 'label');
   fill('f-size', DICT.sizes, 'label');
   fill('f-asuffix', DICT_STORE['f-asuffix'], 'label');
@@ -1006,20 +1007,22 @@ function renderRefineFinal() {
     }
     return;
   }
-  // 分段模式：按 compiler 原拼装顺序重组：prefix → core → expansion → mood → atmosphere
-  // → extra → positives → free_cons → style_suffix → 排除块句
+  // 分段模式：按 compiler 原拼装顺序重组（2026-08-27 重构）：
+  // prefix → core → 轴正向 → 正向自由约束 → expansion → mood → atmosphere
+  // → style_suffix → 排除块句
   const segs = (pendingSpec && pendingSpec.compiled_segments) || {};
   const g = k => (refineSegs[k] && refineSegs[k].en) || segs[k] || '';
-  const parts = [segs.media_prefix, g('scene_core_en'), g('scene_expansion'),
-                 segs.mood_inject, g('atmosphere_notes'), segs.extra_en,
+  const parts = [segs.media_prefix, g('scene_core_en'),
                  ...(segs.positives || []), g('free_constraints_en'),
+                 g('scene_expansion'), segs.mood_inject, g('atmosphere_notes'),
                  segs.style_suffix]
     .map(p => String(p || '').trim().replace(/\.$/, ''))
     .filter(Boolean);
   let full = parts.join(', ');
-  // 排除块重组：轴负向（negative_block 减去旧翻译词）+ 新翻译负向 + people 兜底。
+  // 排除块重组：轴负向（negative_block 减去旧翻译词）+ 新翻译负向。
   // 关键：旧 free_negative_en 的词要从轴负向里剥掉——否则用户删了"月亮"，
   // 旧翻译的 moon 仍留在块里删不掉（2026-08-26 精修回归发现）。
+  // people 强制负向已配置化（编译期入 negative_block，精修直接沿用）
   const oldNeg = String(segs.free_negative_en || '').split(/[，,、]/)
     .map(x => x.trim().toLowerCase()).filter(Boolean);
   const axisNeg = (segs.negative_block || [])
@@ -1030,7 +1033,6 @@ function renderRefineFinal() {
   for (const n of [...axisNeg, ...newNeg]) {
     const k = n.toLowerCase(); if (!seen.has(k)) { seen.add(k); dedup.push(n); }
   }
-  if (!seen.has('people')) dedup.push('people');
   if (dedup.length) full += '. Strictly avoid: ' + dedup.join(', ') + '.';
   document.getElementById('refine-final').textContent = full;
   // 存回 pendingSpec：确认生成走 compiled_prompt 直通
@@ -1529,18 +1531,24 @@ function axesFor(mode) {
   return (DICT.constraint_axes || []).filter(a =>
     !a.applies_to || a.applies_to.includes(mode));
 }
+function stylesFor(mode) {
+  // 画风 applies_to 过滤：无标注=通用层；有标注=页面专属
+  return Object.fromEntries(Object.entries(DICT.art_styles || {}).filter(([, v]) =>
+    !v.applies_to || v.applies_to.includes(mode)));
+}
 async function loadCharDict() {
   if (!DICT) DICT = await (await fetch('/api/form/dict', {headers: H()})).json();
   // atype 下拉只留角色两类（character_full/character_sheet）
   const charTypes = Object.fromEntries(Object.entries(DICT.asset_types || {})
     .filter(([k]) => k.startsWith('character_')));
   DICT_STORE['c-atype'] = charTypes;
-  DICT_STORE['c-style'] = DICT.art_styles;
+  const charStyles = stylesFor('character');
+  DICT_STORE['c-style'] = charStyles;
   const at = document.getElementById('c-atype');
   at.innerHTML = '';
   for (const [k, v] of Object.entries(charTypes))
     at.insertAdjacentHTML('beforeend', `<option value="${k}">${v.label || k}</option>`);
-  for (const [id, src] of [['c-style', DICT.art_styles], ['c-size', DICT.sizes]]) {
+  for (const [id, src] of [['c-style', charStyles], ['c-size', DICT.sizes]]) {
     const el = document.getElementById(id);
     el.innerHTML = '';
     for (const [k, v] of Object.entries(src))
@@ -1548,7 +1556,7 @@ async function loadCharDict() {
   }
   const cnt = document.getElementById('c-count');
   cnt.innerHTML = '';
-  for (const n of [1, 2, 4, 6, 8]) cnt.insertAdjacentHTML('beforeend', `<option ${n===4?'selected':''}>${n}</option>`);
+  for (const n of [1, 2, 4, 6, 8]) cnt.insertAdjacentHTML('beforeend', `<option ${n===DICT.defaults.count?'selected':''}>${n}</option>`);
   // 角色适用轴
   const ax = document.getElementById('c-axes');
   ax.innerHTML = axesFor('character').map(a => `
@@ -1687,12 +1695,13 @@ async function loadMonDict() {
   const monTypes = Object.fromEntries(Object.entries(DICT.asset_types || {})
     .filter(([k, v]) => (v.applies_to || []).includes('monster')));
   DICT_STORE['m-atype'] = monTypes;
-  DICT_STORE['m-style'] = DICT.art_styles;
+  const monStyles = stylesFor('monster');
+  DICT_STORE['m-style'] = monStyles;
   const at = document.getElementById('m-atype');
   at.innerHTML = '';
   for (const [k, v] of Object.entries(monTypes))
     at.insertAdjacentHTML('beforeend', `<option value="${k}">${v.label || k}</option>`);
-  for (const [id, src] of [['m-style', DICT.art_styles], ['m-size', DICT.sizes]]) {
+  for (const [id, src] of [['m-style', monStyles], ['m-size', DICT.sizes]]) {
     const el = document.getElementById(id);
     el.innerHTML = '';
     for (const [k, v] of Object.entries(src))
@@ -1700,7 +1709,7 @@ async function loadMonDict() {
   }
   const cnt = document.getElementById('m-count');
   cnt.innerHTML = '';
-  for (const n of [1, 2, 4, 6, 8]) cnt.insertAdjacentHTML('beforeend', `<option ${n===4?'selected':''}>${n}</option>`);
+  for (const n of [1, 2, 4, 6, 8]) cnt.insertAdjacentHTML('beforeend', `<option ${n===DICT.defaults.count?'selected':''}>${n}</option>`);
   // 怪物适用轴
   const ax = document.getElementById('m-axes');
   ax.innerHTML = axesFor('monster').map(a => `

@@ -97,9 +97,4 @@ def explain_spec(spec: dict) -> list:
         out.append({"section": "角色动作", "zh": f"{d['label']}：{d.get('desc', '')}",
                     "en": d.get("inject", "")})
 
-    # 8. extra_prompt（sheet 语料等）
-    ep = spec.get("extra_prompt")
-    if ep:
-        out.append({"section": "附加语料", "zh": "表单/管线附加的构图语料", "en": ep})
-
     return out

@@ -20,6 +20,9 @@ sizes:
 # ---------- 画风预设（白名单制：整尾块按画风切换，防条款自相矛盾 D13） ----------
 # conflict_words：与该画风互斥的渲染词（L1 画风冲突检查数据源，schema v2）
 # desc：表单展示的一句人话解释（无美术背景的策划可读懂）
+# applies_to：页面适用（scene/character/monster；缺省=通用层，三页可见）
+# 页面专属画风（2026-08-27 调研落地）：经典像素为通用兜底层，
+# 每页另配专属画风——角色/怪物共用暗黑地牢（哥特鸦羽笔手绘，与像素层互斥）
 art_styles:
   pixel_classic:
     label: "经典像素（Dead Cells / Blasphemous）"
@@ -28,12 +31,20 @@ art_styles:
     suffix: "Deep muted palette, crisp dark outlines, high pixel density, layered dithering, detailed pixel rendering, no text, no watermark, in the style of Dead Cells and Blasphemous environmental art"
     conflict_words: ["手绘", "水墨", "水彩", "油画", "厚涂", "铅笔画",
                      "photorealistic", "hand-drawn", "ink wash", "watercolor", "oil painting"]
-  occult_card:
-    label: "密教模拟器（暗色手绘神秘卡牌）"
-    desc: "暗色手绘卡牌风，参考《密教模拟器》：墨水+水彩质感、神秘符号、羊皮纸底色。适合卡面/UI 装饰"
-    compiler_hint: "dark occult hand-drawn illustration"
-    suffix: "Dark muted palette, hand-drawn occult illustration, ink and gouache textures, esoteric symbolism, aged parchment tones, fine crosshatching, ornate borders, no text, no watermark, in the style of Cultist Simulator card art"
-    conflict_words: ["像素", "pixel art", "pixel-art", "像素画"]
+  darkest_dungeon:
+    label: "暗黑地牢（哥特鸦羽笔手绘）"
+    desc: "参考《暗黑地牢》：钢笔墨线+ pooling 黑阴影高对比、磨损羊皮纸暖调、Mignola 式漫画构图。角色/怪物立绘专用"
+    applies_to: [character, monster]
+    compiler_hint: "gothic hand-drawn ink illustration"
+    suffix: "Hand-drawn gothic crowquill ink linework, heavy pooling black shadows, stark high contrast, worn parchment warm tones, muted earthy palette with accent hues, Mignola-style comic shapes, weathered grim texture, no text, no watermark, in the style of Darkest Dungeon character art"
+    conflict_words: ["像素", "pixel art", "pixel-art", "像素画", "photorealistic", "3D render"]
+
+# ---------- 模式级强制负向（2026-08-27 配置化：原硬编码 people） ----------
+# 场景/怪物默认不出人类；角色页本就要画人，留空
+forced_negative:
+  scene: [people]
+  character: []
+  monster: [people]
 
 # ---------- 资产类型 → 媒介声明前缀（按构图本质分类 D16） ----------
 asset_types:
@@ -63,9 +74,9 @@ asset_types:
     desc: "单角色全身像：干净剪影、居中构图、纯色/简洁背景（作形象基准）"
     prefix: "Pixel art full-body character portrait, clean silhouette, centered composition, simple background"
   character_sheet:
-    label: "角色三视图"
-    desc: "同一角色正/侧/背三面并列，比例一致（设定表）"
-    prefix: "Pixel art character turnaround sheet, front side and back views aligned, consistent proportions, neutral background"
+    label: "角色前后视图"
+    desc: "同一角色正/背两面并列，比例一致（设定表）"
+    prefix: "Pixel art character turnaround sheet, front and back views aligned, consistent proportions, neutral background"
   # 怪物模式专用（applies_to: monster 过滤）
   monster_full:
     label: "怪物立绘"
@@ -122,16 +133,12 @@ constraint_axes:
     applies_to: [scene]
     options:
       - { id: any,      label: "不限" }
-      - { id: natural,  label: "完全自然",
+      - { id: natural,  label: "无人工痕迹",
           negative: [bridges, roads, buildings, fences, farmland, ships, machinery],
           positive: [pristine untouched wilderness],
           zh: { negative: ["桥梁", "道路", "建筑", "栅栏", "农田", "船舶", "机械"],
                 positive: ["原始未触动的荒野"] },
           verify_question: "画面中是否完全没有人工建筑/道路/桥梁等人造物？" }
-      - { id: present,  label: "有人工痕迹",
-          positive: [weathered man-made structures, worn stone paths],
-          zh: { positive: ["风化的人造结构", "磨损的石径"] },
-          verify_question: "画面中是否有人工痕迹（建筑/道路/桥梁等）？" }
   - id: water
     label: "水体"
     desc: "画面里是否有河流/湖泊/水塘等水面"
@@ -272,6 +279,22 @@ constraint_axes:
           verify_question: "角色是否背身回眸？" }
 
   # ---- 怪物模式轴（applies_to: monster；设计依据：剪影优先/单一主形/一只怪物一个动词/大中小形分级） ----
+  - id: mon_bg
+    label: "背景"
+    desc: "立绘背景复杂度（影响抠图与复用）"
+    applies_to: [monster]
+    options:
+      - { id: any,      label: "不限" }
+      - { id: plain,    label: "纯色简洁",
+          negative: ["detailed background", "complex scenery", "environment scene"],
+          positive: ["flat solid color background", "simple gradient backdrop"],
+          zh: { negative: ["复杂背景", "环境场景"],
+                positive: ["纯色平涂背景", "简洁渐变背景"] },
+          verify_question: "背景是否为纯色/简洁（无环境场景细节）？" }
+      - { id: scenic,   label: "带场景",
+          positive: ["creature within a themed environment"],
+          zh: { positive: ["怪物置身主题环境中"] },
+          verify_question: "画面是否带主题场景背景？" }
   - id: mon_body
     label: "体型结构"
     desc: "身体基本构型（决定剪影主形，60-70% 设计占比）"

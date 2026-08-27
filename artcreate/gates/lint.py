@@ -28,7 +28,6 @@ def lint_spec(spec: dict, compiled_prompt: str = "", art_style: str = ""):
     warnings = []
     desc = spec.get("description", "").strip()
     free_text = str((spec.get("constraints") or {}).get("free_text") or "").strip()
-    extra = spec.get("extra_prompt", "").strip()
     art_style = art_style or spec.get("art_style", cfg.defaults["art_style"])
 
     # 1. 空描述
@@ -40,7 +39,8 @@ def lint_spec(spec: dict, compiled_prompt: str = "", art_style: str = ""):
     # 2. 负向注入扫描（自由约束文本是重灾区；描述里的否定交给编译器语义处理）
     #    注意：constraints.free_text_negative（负向自由约束）不扫——
     #    它本来就该写否定，编译时直通句尾排除块（正确用法）
-    for text, field in ((free_text, "自由约束"), (extra, "细化项")):
+    #    extra_prompt 为管线内部语料（pose inject 等，预写英文），不扫
+    for text, field in ((free_text, "自由约束"),):
         for pattern, lang in NEGATION_PATTERNS:
             m = pattern.search(text)
             if m:
@@ -58,7 +58,7 @@ def lint_spec(spec: dict, compiled_prompt: str = "", art_style: str = ""):
     # 3. 画风条款冲突（schema v2：冲突词从画风字典 conflict_words 读取）
     style_conf = cfg.art_styles.get(art_style, {})
     conflicts = [w for w in style_conf.get("conflict_words", [])
-                 if w in desc or w in free_text or w in extra]
+                 if w in desc or w in free_text]
     if conflicts:
         warnings.append({
             "level": "warn", "code": "STYLE_CONFLICT",
