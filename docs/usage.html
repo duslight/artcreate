@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>artcreate v1.0 · 使用说明与升级报告</title>
+<style>
+  :root {
+    --bg: #14161c; --panel: #1c1f27; --panel2: #22262f;
+    --line: #33384a; --txt: #d8dce6; --dim: #8b92a5;
+    --acc: #e8a33d; --acc2: #4fa3e3; --ok: #5cb87a; --bad: #d9635f;
+    --mono: "Cascadia Code", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--txt);
+         font: 15px/1.75 "Segoe UI", "Microsoft YaHei", sans-serif;
+         max-width: 1000px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 26px; margin-bottom: 4px; letter-spacing: .5px; }
+  h1 .ver { color: var(--acc); font-family: var(--mono); font-size: 18px; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 28px; }
+  h2 { font-size: 19px; color: var(--acc); margin: 40px 0 14px;
+       padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 15px; color: var(--acc2); margin: 22px 0 8px; }
+  p { margin: 8px 0; }
+  ul, ol { margin: 8px 0 8px 22px; }
+  li { margin: 4px 0; }
+  code { font-family: var(--mono); font-size: 13px; background: var(--panel2);
+         padding: 1px 6px; border-radius: 4px; color: #e8c07a; }
+  pre { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+        padding: 14px 16px; overflow-x: auto; margin: 10px 0;
+        font-family: var(--mono); font-size: 13px; line-height: 1.6; }
+  pre code { background: none; padding: 0; color: var(--txt); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+  th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left;
+           vertical-align: top; }
+  th { background: var(--panel2); color: var(--acc); font-weight: 600; white-space: nowrap; }
+  td:first-child { white-space: nowrap; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px;
+         margin-right: 4px; vertical-align: 1px; }
+  .tag-old { background: #3a2f2a; color: #d9a06a; }
+  .tag-new { background: #22352a; color: #7cc79a; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+           padding: 16px 20px; margin: 14px 0; }
+  .panel b { color: var(--acc); }
+  .flow { font-family: var(--mono); font-size: 13px; color: var(--dim);
+          background: var(--panel2); border-radius: 8px; padding: 12px 16px;
+          margin: 10px 0; overflow-x: auto; white-space: nowrap; }
+  .flow b { color: var(--acc2); font-weight: normal; }
+  .num { font-family: var(--mono); color: var(--acc); }
+  .warn { border-left: 3px solid var(--acc); padding-left: 14px; color: var(--dim);
+          font-size: 13.5px; }
+  a { color: var(--acc2); }
+</style>
+</head>
+<body>
+
+<h1>artcreate <span class="ver">v1.0.0 · 92d32b5</span></h1>
+<div class="sub">标准化 AI 美术资产生产线 —— 使用说明 + 升级报告（对比最初「美术生图管线」art_pipeline 版本） · 2026-08-27</div>
+
+<!-- ================================================================ -->
+<h2>一、升级报告：从「美术生图管线」到 artcreate</h2>
+
+<p>最初版本（<b>art_pipeline</b>，<span class="num">809</span> 行 Python + <span class="num">341</span> 行单页）解决的是「把表单变成英文 prompt 并出图」这一件事。
+当前版本（<b>artcreate</b>，<span class="num">3994</span> 行 Python + <span class="num">2300</span> 行工作台 + <span class="num">580</span> 行结构化字典）是一条<b>带质量门禁、带资产库、带经验回写</b>的完整生产线。下表是全貌对比：</p>
+
+<table>
+<tr><th>维度</th><th><span class="tag tag-old">旧</span>art_pipeline</th><th><span class="tag tag-new">新</span>artcreate v1.0</th></tr>
+<tr><td>定位</td><td>表单 → prompt → 出图的演示工具</td><td>三产线（场景/角色/怪物）标准化美术资产生产线</td></tr>
+<tr><td>架构</td><td>6 个平铺 .py，单进程内存队列（重启即清）</td><td>分层包（tools / gates / web）+ SQLite 资产库 + 后台 worker 队列（重启可续查）</td></tr>
+<tr><td>字典</td><td>硬编码 config.py（改一次重启一次）</td><td>三层配置链 <code>base.yaml → project.yaml → derived/*.yaml</code> 深合并，选项级人话 desc / 溯源徽标</td></tr>
+<tr><td>资产类型</td><td>5 种（全场景向）</td><td>8 种：场景 5 + 角色立绘/前后视图 + 怪物立绘（<code>applies_to</code> 按页过滤）</td></tr>
+<tr><td>约束轴</td><td>4 条（人工痕迹/水体/空间/植被，全场景）</td><td><span class="num">14</span> 条分线轴：场景 4 + 角色 5（取景/背景/朝向/姿势）+ 怪物 7（背景/体型结构/尺度/威胁定位/标志特征/皮肤材质/威胁基调），每档带注入词中英对照与验图问句</td></tr>
+<tr><td>画风</td><td>2 种通用（经典像素/密教卡牌）</td><td>经典像素为通用层 + <b>暗黑地牢</b>（哥特鸦羽笔手绘）角色/怪物页专属；画风按页过滤；门禁阈值按画风覆盖</td></tr>
+<tr><td>编译器</td><td>v2：LLM 全字段编译，扩展词易与用户约束打架（如「纯色背景」轴被环境扩展顶掉）</td><td>v3：<b>约束前置</b>（轴正向+自由约束先于 LLM 扩展注入，且作为必守上下文）；审核直通（所见即所执行）；模式级强制负向配置化（<code>forced_negative</code>：场景/怪物默认排除 people，角色页不排）</td></tr>
+<tr><td>质量门禁</td><td>无</td><td><b>四层</b>：L1 lint（负向注入/画风冲突/token 超限/枚举合法性）+ L2 编译自检（LLM 反向核对忠实度）+ L3 意图回查（VLM 按验图问句验成图）+ L4 跨批统计；另加机械门禁四项（调色板/网格规则度/alpha 边缘/尺寸精确）</td></tr>
+<tr><td>资产管理</td><td>图片落盘即结束，无记录</td><td>SQLite 注册表：每次 run 落 manifest（完整 spec+编译分段+门禁结果），候选 select/reject 拍板，<code>events</code> append-only 操作日志（谁在何时干了什么）</td></tr>
+<tr><td>角色一致性</td><td>无</td><td>锚点管线：首张立绘「设为锚点」→ 后续生成自动挂参考图 + dHash 一致性检查；<b>三槽参考图</b>（人物/画风/姿势各 1 张，分工说明句直送模型）</td></tr>
+<tr><td>怪物设计</td><td>无</td><td>独立怪物页：剪影优先方法论落成 7 条轴，独立三槽参考图库（与角色库隔离）</td></tr>
+<tr><td>经验沉淀</td><td>无</td><td>distill 蒸馏拍板理由 → LLM 判定 → 晋升为字典选项（<code>derived/*.yaml</code> 自动 git 留痕，可 promote/demote）</td></tr>
+<tr><td>人机审核</td><td>提交后盲等出图</td><td>编译审核卡：完整 prompt <b>中英对照</b> + 分段来源解释 + lint 警告；精修模式（分段中文改→英文同步 / 整段直改→LLM 原位对齐）；历史编译词沿用直达</td></tr>
+<tr><td>交互形态</td><td>单页表单</td><td>六页工作台（场景/角色生成/怪物生成/动作特效/队列/历史+内嵌评审视图）+ toast 通知 + 页内弹窗（零浏览器原生弹窗）+ 跨页状态隔离</td></tr>
+<tr><td>发布交付</td><td>无</td><td>资产命名（主名+后缀字典）→ 拍板发布 <code>exports/final/</code> 交付库</td></tr>
+<tr><td>工程健壮性</td><td>—</td><td>Windows 中文路径安全读写（cv2 静默失败修复）、HTML 入口禁缓存、单参考图 data URI 修复、3 秒防抖、按钮防重复</td></tr>
+<tr><td>部署</td><td>手动脚本</td><td>systemd 服务 + 访问令牌（手机端可用 <code>?token=</code> 直连）+ 部署手册</td></tr>
+</table>
+
+<h3>1.1 编译器进化细节（v2 → v3）</h3>
+<div class="flow">prompt 结构：<b>资产前缀</b> → 场景翻译 → <b>轴正向 + 正向自由约束（前置！）</b> → LLM 扩展词 → 氛围注入 → 氛围注记 → 画风尾块 → <b>Strictly avoid:</b> 排除块（轴负向+模式强制负向+自由负向，全局去重） → 参考图分工说明句</div>
+<ul>
+<li><b>为什么约束要前置</b>：旧版扩展词夹在场景与约束之间，LLM 拿到的扩展指令还写死「家具/物件/建筑/绝不出人」——对要画人的角色页是矛盾指令，也会把「纯色简洁背景」轴顶掉。新版轴正向同时进 META_PROMPT 的必守上下文（REQUIRED positive constraints），纯色背景时明令禁止扩展环境细节。</li>
+<li><b>追加描述通道已删</b>：旧版 extra_prompt 前端早已无输入入口，v3 彻底删除该通道（pose/三视图等管线内部语料改走自由约束，编译路径统一）。</li>
+<li><b>审核直通</b>：你在审核卡确认过的编译词原样执行（<code>compiled_prompt</code>），杜绝「审核的和执行的不一致」——LLM 重编译有随机性。</li>
+<li><b>强制负向配置化</b>：旧版无脑追加 people 排除（角色页也排，自相矛盾）；新版 <code>base.yaml</code> 配置 <code>forced_negative: {scene: [people], character: [], monster: [people]}</code>，改配置即可调整。</li>
+</ul>
+
+<h3>1.2 质量门禁四层（旧版完全没有）</h3>
+<table>
+<tr><th>层</th><th>名字</th><th>做什么</th><th>拦什么</th></tr>
+<tr><td>L1</td><td>编译前 lint</td><td>纯规则静态扫描，零成本</td><td>「不要X」式否定注入（生成模型反向激活）、画风冲突词、token 超限截断、枚举值写错静默失效</td></tr>
+<tr><td>L2</td><td>编译自检</td><td>第二个 LLM 反向核对编译产物</td><td>翻译丢意、越权加戏（prompt 里出现表单没要求的东西）</td></tr>
+<tr><td>L3</td><td>意图回查</td><td>VLM 拿用户原始约束直接验<b>成图</b></td><td>图不对题（每条轴选项带 verify_question，如「画面是否完全没有人工建筑？」）</td></tr>
+<tr><td>L4</td><td>跨批统计</td><td>统计历史通过率</td><td>某类约束长期不生效 → 暴露字典或编译问题</td></tr>
+<tr><td>机械</td><td>机械门禁</td><td>像素级程序检查</td><td>调色板超色、网格不规则、边缘半透明、尺寸不符（按画风可放宽，如暗黑地牢手绘风 4096 色）</td></tr>
+</table>
+
+<h3>1.3 数字速览</h3>
+<table>
+<tr><th></th><th>旧 art_pipeline</th><th>新 artcreate</th></tr>
+<tr><td>Python 代码</td><td class="num">809 行 / 6 文件</td><td class="num">3994 行 / 5 子包 21 模块</td></tr>
+<tr><td>前端页面</td><td class="num">341 行 / 1 页</td><td class="num">2300 行 / 工作台 + 评审页 + 弹窗组件</td></tr>
+<tr><td>字典</td><td class="num">235 行硬编码</td><td class="num">580 行三层 YAML（可覆盖、可晋升）</td></tr>
+<tr><td>约束轴</td><td class="num">4 条（单产线）</td><td class="num">14 条（三产线分线）</td></tr>
+<tr><td>门禁层</td><td class="num">0</td><td class="num">5（L1-L4 + 机械）</td></tr>
+<tr><td>CLI 子命令</td><td class="num">0（纯 Web）</td><td class="num">18 个（run/compile/lint/list/select/reject/gate/diagnose/stats/serve/regenerate/distill/proposals/promote/demote/anchor/consistency/poses）</td></tr>
+<tr><td>数据持久化</td><td class="num">内存（重启即清）</td><td class="num">SQLite（runs/候选/事件）+ manifest 落盘</td></tr>
+</table>
+
+<!-- ================================================================ -->
+<h2>二、使用说明</h2>
+
+<h3>2.1 快速开始</h3>
+<pre><code>cd artcreate
+python -m venv .venv
+.venv\Scripts\activate            # Windows；Linux/Mac: source .venv/bin/activate
+pip install -r requirements.txt
+copy .env.example .env            # 填 ARK_API_KEY（生图）与 ZHIPU_API_KEY（编译/验图）
+python -m artcreate serve         # 启动工作台
+# 浏览器打开 http://127.0.0.1:8870/workbench.html</code></pre>
+<p class="warn">服务器部署（公网访问）须配置环境变量 <code>WORKBENCH_TOKEN</code>（访问令牌），详见 <code>deploy/README.md</code>。手机端可用 <code>http://&lt;IP&gt;:8870/workbench.html?token=&lt;令牌&gt;</code> 直连。</p>
+
+<h3>2.2 三条产线怎么选</h3>
+<table>
+<tr><th>页面</th><th>产什么</th><th>核心机制</th></tr>
+<tr><td>场景 / 静物</td><td>场景全景、背景底图、单体物件、卡面、纹理</td><td>4 条场景轴（人工痕迹/水体/空间/植被）+ 9 种氛围光影 + 迭代载入（parent_run 溯源）</td></tr>
+<tr><td>角色生成</td><td>角色立绘（形象基准）→ 前后视图 → 动作变体</td><td>首张拍板后「设为锚点」；三槽参考图（<b>人物</b>管长相/<b>画风</b>管笔触/<b>姿势</b>管构图）；5 条角色轴</td></tr>
+<tr><td>怪物生成</td><td>非人形生物设定图</td><td>剪影优先方法论：7 条怪物轴（背景/体型结构/尺度/威胁定位/标志特征/皮肤材质/威胁基调）；独立三槽参考图库</td></tr>
+</table>
+<p>三条线共用同一编译/门禁/入库链路，差异全部在<b>字典层</b>（<code>applies_to</code> 过滤），不写死代码。</p>
+
+<h3>2.3 单次生成完整流程</h3>
+<div class="flow"><b>填表</b>（描述/类型/画风/尺寸/数量/约束轴/自由约束） → <b>提交</b> → <b>编译审核卡</b>（中英对照+lint） →［可选 精修］→ <b>确认生成</b>（扣费出图） → <b>后处理</b>（像素化/量化） → <b>门禁</b> → <b>候选拍板</b>（接受/拒绝/再生成） →［角色/怪物：<b>设为锚点</b>］→ <b>命名发布</b> exports/final/</div>
+
+<ol>
+<li><b>填表</b>：中文一句话描述即可，翻译交给编译器。约束轴点选后下方即时显示注入/排除词的中英对照。负向自由约束栏：场景/怪物页<b>默认已排除人类</b>，只写额外要排除的东西（例：蜘蛛、翅膀）。</li>
+<li><b>编译审核</b>（提交后弹出）：上半部是完整英文 prompt 与其中文翻译，下半部分段解释每段从哪来（字典注入/LLM 扩展/你的输入）。有 ⚠️ lint 警告可回去改；「Strictly avoid:」句是排除块，独立于正文。</li>
+<li><b>精修模式</b>（可选）：<b>整段直改</b>（默认）——直接改中文全文，LLM 逐句对齐只重译改动部分；<b>分段模式</b>——改某段中文，对应英文段同步重译，其余原样保留。</li>
+<li><b>确认生成</b>：每张成本约 0.2 元（方舟 Seedream 4.5）。数量默认 1，先看效果再加量。</li>
+<li><b>候选拍板</b>：出图区逐张检查（L3 验图结果标注在旁）。接受 → 入库；拒绝 → 可「拒绝并再生」（自动带 parent_run 与修正语料）。全部处置完出图区自动收起。</li>
+<li><b>设为锚点</b>（角色/怪物页）：把当前候选立为形象基准，之后该角色的所有生成都自动挂此参考图并跑一致性检查。</li>
+<li><b>命名发布</b>：资产名（如 <code>alice</code>）+ 后缀（<code>_v2/_alt/_icon</code>…）→ 发布到 <code>exports/final/</code> 交付库。</li>
+</ol>
+
+<h3>2.4 动作批量（动画帧）</h3>
+<p>「动作 / 特效」页选角色（须已有锚点）+ 勾选动作（待机/行走/攻击/受击/技能/倒地/起手/跳跃/冲刺）→ 每动作一个 run，自动挂锚点参考图 + dHash 一致性检查，批量产出动画帧序列。</p>
+
+<h3>2.5 历史与迭代</h3>
+<ul>
+<li><b>从历史载入</b>：场景页可点选最近 30 条 run 载入表单，作为新迭代的起点（自动记 parent_run）。</li>
+<li><b>沿用历史编译词</b>：载入后审核卡提供「沿用上次编译」——底稿直接进精修模式改，不必从零重译。</li>
+<li><b>评审视图</b>：工作台内嵌评审 tab，看全部候选/门禁详情/操作时间线。</li>
+</ul>
+
+<h3>2.6 CLI 速查（自动化/脚本化用）</h3>
+<pre><code>python -m artcreate run specs/xxx.yaml      # 跑一批（编译→生成→后处理→门禁→入库）
+python -m artcreate compile specs/xxx.yaml  # 只编译看 prompt（不花钱）
+python -m artcreate lint specs/xxx.yaml     # 只跑 L1 静态检查
+python -m artcreate list [--status gated]   # 列候选
+python -m artcreate select &lt;subject&gt;        # 拍板选定稿
+python -m artcreate reject &lt;run&gt; &lt;index&gt;    # 拒绝某候选
+python -m artcreate regenerate &lt;run_id&gt;     # 从历史 run 再生
+python -m artcreate stats                   # L4 跨批统计
+python -m artcreate anchor set &lt;char&gt; &lt;img&gt; # 手动设锚点
+python -m artcreate poses &lt;char&gt; idle,walk  # 动作批量
+python -m artcreate distill / proposals / promote / demote   # 经验蒸馏与晋升</code></pre>
+
+<h3>2.7 配置体系（改行为不改代码）</h3>
+<table>
+<tr><th>层</th><th>文件</th><th>谁写</th><th>典型用途</th></tr>
+<tr><td>出厂</td><td><code>artcreate/base.yaml</code></td><td>随代码发布</td><td>全部字典与默认值（约束轴/画风/氛围/动作/后缀/强制负向）</td></tr>
+<tr><td>项目</td><td><code>project.yaml</code></td><td>你手写</td><td>本游戏定制：默认画风/尺寸/数量、provider 密钥环境、门禁阈值</td></tr>
+<tr><td>晋升</td><td><code>derived/*.yaml</code></td><td>distill 自动写</td><td>拍板经验晋升成的字典选项（带置信度，git 留痕）</td></tr>
+</table>
+<p>三层<b>深合并</b>：dict 按键覆盖、列表按 id 合并（同 id 递归、新 id 追加）。想在项目里加一条「教堂」人工痕迹选项？在 project.yaml 写同 id 轴追加 option 即可，base 不动。</p>
+
+<h3>2.8 密钥与安全</h3>
+<ul>
+<li>密钥一律走 <code>.env</code> 环境变量（<code>ARK_API_KEY</code> / <code>ZHIPU_API_KEY</code> / <code>WORKBENCH_TOKEN</code>），仓库不接收任何真实密钥。</li>
+<li>生图走火山方舟 Seedream 4.5；编译/验图走智谱 glm-4-flash / glm-4v-flash（成本低）。provider 可在 project.yaml 热插拔，也支持「自定义 API」（方舟兼容端点）。</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2>三、里程碑时间线</h2>
+<table>
+<tr><th>阶段</th><th>内容</th></tr>
+<tr><td>art_pipeline</td><td>美术生图管线 v1/v2：表单 → LLM 编译 → 出图 → 像素化，单页演示</td></tr>
+<tr><td>artcreate 阶段 0-1</td><td>通道验证（种子锁定/图生图/局部重绘）+ 仓库地基 + 三件套移植 + L1</td></tr>
+<tr><td>阶段 2-3</td><td>SQLite 资产注册表 + 四层门禁 + 纠偏机制</td></tr>
+<tr><td>阶段 3.5-4</td><td>分层配置链 + 字典 schema v2 + spec 校验 + 操作日志 + 评审视图/拒绝再生闭环</td></tr>
+<tr><td>阶段 5-6</td><td>服务端工作台（队列/令牌/移动端）+ 经验蒸馏晋升闭环</td></tr>
+<tr><td>阶段 7 + 1.0</td><td>角色锚点管线 + 调色板量化 + 打包部署 + 资产命名发布 + 动作批量</td></tr>
+<tr><td>近期迭代</td><td>三槽参考图体系 → 角色/怪物页拆分与怪物产线 → 中文路径/跨页隔离/自动收起等工程修复 → <b>编译词精修八条</b>（约束前置/通道清理/暗黑地牢画风/字典调整）</td></tr>
+</table>
+
+<p class="sub" style="margin-top:40px">artcreate v1.0.0 · 本文档随仓库发布于 docs/usage.html · 生成于 2026-08-27</p>
+
+</body>
+</html>
