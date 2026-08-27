@@ -268,10 +268,56 @@
   </div>
 </div>
 
-<!-- 怪物生成（独立于角色页：非人形生物设计，约束轴/编译词/画风待方案对齐后填充） -->
+<!-- 怪物生成（独立于角色页：非人形生物设计。轴依据：剪影优先/单一主形/一只怪物一个动词） -->
 <div id="page-monster" class="panel" style="display:none">
-  <div style="font-size:13px;color:var(--dim);padding:18px 0">
-    怪物生成页面建设中——约束轴（体型/生物类别/威胁度…）、LLM 编译词、推荐画风正在设计中，对齐后开放。
+  <div class="row">
+    <div><label>怪物名（库内组织 + 拍板发布，一名两用）</label><input type="text" id="m-name" placeholder="例：ember_toad"></div>
+  </div>
+  <div class="row">
+    <div><label>怪物描述（中文一句话：物种意象/环境/行为）</label><input type="text" id="m-desc" placeholder="例：沼泽里的巨型火蟾蜍，背脊喷吐余烬"></div>
+  </div>
+  <div class="row">
+    <div><label>资产类型</label><select id="m-atype" onchange="showDesc(this)"></select><div class="desc" id="desc-m-atype"></div></div>
+    <div><label>画风</label><select id="m-style" onchange="showDesc(this)"></select><div class="desc" id="desc-m-style"></div></div>
+  </div>
+  <div class="row">
+    <div><label>尺寸</label><select id="m-size"></select></div>
+    <div><label>数量 <span style="font-size:11px;color:var(--dim)">每 1 张图成本≈0.2 元</span></label><select id="m-count"></select></div>
+  </div>
+  <label>约束轴（怪物适用：体型结构/尺度/威胁定位/标志特征/皮肤材质/威胁基调）</label>
+  <div id="m-axes"></div>
+  <!-- 参考图三槽位（本体/画风/姿态 各 1 张，分工直送：第1张管造型，其余管画风姿态） -->
+  <div id="mon-ref-slots" style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+    <div class="ref-slot" data-slot="monster_ref" style="flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:8px">
+      <label style="margin-bottom:4px">本体参考 <span style="font-size:10px;color:var(--dim)">管造型/解剖（排第1张）</span></label>
+      <div class="slot-list" style="display:flex;gap:6px;flex-wrap:wrap;min-height:34px"></div>
+      <button class="slot-manage" onclick="toggleAnchorPanel('mon-slot-monster_ref')" style="margin-top:6px;font-size:11px">上传/管理…</button>
+    </div>
+    <div class="ref-slot" data-slot="monster_style_ref" style="flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:8px">
+      <label style="margin-bottom:4px">画风参考 <span style="font-size:10px;color:var(--dim)">管笔触/配色</span></label>
+      <div class="slot-list" style="display:flex;gap:6px;flex-wrap:wrap;min-height:34px"></div>
+      <button class="slot-manage" onclick="toggleAnchorPanel('mon-slot-monster_style_ref')" style="margin-top:6px;font-size:11px">上传/管理…</button>
+    </div>
+    <div class="ref-slot" data-slot="monster_pose_ref" style="flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:8px">
+      <label style="margin-bottom:4px">姿态参考 <span style="font-size:10px;color:var(--dim)">管姿态/构图</span></label>
+      <div class="slot-list" style="display:flex;gap:6px;flex-wrap:wrap;min-height:34px"></div>
+      <button class="slot-manage" onclick="toggleAnchorPanel('mon-slot-monster_pose_ref')" style="margin-top:6px;font-size:11px">上传/管理…</button>
+    </div>
+  </div>
+  <!-- 三槽锚面板挂载点（可见容器：面板挂入即显示，空置时不占空间） -->
+  <div id="mon-slot-monster_ref"></div>
+  <div id="mon-slot-monster_style_ref"></div>
+  <div id="mon-slot-monster_pose_ref"></div>
+  <div style="font-size:11px;color:var(--dim);margin-top:4px">三槽各挂 1 张（初始空置，点锚卡启用/再点取消）；提交按 本体→画风→姿态 顺序直送，并注入分工说明。怪物锚库独立于角色库，服务器持久。</div>
+  <div class="row" style="margin-top:10px">
+    <div><label>正向自由约束（描述"应该是什么"）</label>
+      <textarea id="m-free" placeholder="例：背脊有火焰喷射孔，喉囊发亮"></textarea></div>
+    <div><label>负向自由约束（不要出现什么）</label>
+      <textarea id="m-fneg" placeholder="例：翅膀、人形"></textarea></div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
+    <button class="go" id="submit-mon-btn" onclick="submitMonJob()">提交怪物生成任务</button>
+    <span style="font-size:11px;color:var(--dim)">提交后进入编译审核 → 确认生成 → 候选拍板 → 「设为锚点」</span>
   </div>
 </div>
 
@@ -471,6 +517,7 @@ function show(p) {
   if (p === 'feed') loadFeed();
   if (p === 'prop') loadProp('pending');
   if (p === 'pose') loadCharDict();
+  if (p === 'monster') loadMonDict();
   if (p === 'anim') { loadPoseDict(); loadStyleAnchors(); }
 }
 
@@ -1260,6 +1307,10 @@ const STYLE_REF_PAGES = {
   cr:   { listId: null,               storeKey: 'character_ref',  zoneId: 'char-slot-character_ref', max: 1, slot: true },
   cs:   { listId: null,               storeKey: 'style_ref',      zoneId: 'char-slot-style_ref',     max: 1, slot: true },
   cp:   { listId: null,               storeKey: 'pose_ref',       zoneId: 'char-slot-pose_ref',      max: 1, slot: true },
+  // 怪物页三槽位（2026-08-27）：本体/画风/姿态 各 1 张互斥单选，独立库
+  mr:   { listId: null,               storeKey: 'monster_ref',        zoneId: 'mon-slot-monster_ref',       max: 1, slot: true },
+  ms:   { listId: null,               storeKey: 'monster_style_ref',  zoneId: 'mon-slot-monster_style_ref', max: 1, slot: true },
+  mp:   { listId: null,               storeKey: 'monster_pose_ref',   zoneId: 'mon-slot-monster_pose_ref',  max: 1, slot: true },
   anim: { listId: 'anim-style-ref-list', storeKey: 'anim',        capId: 'anim-anchor-cap', zoneId: 'anim-style-ref-zone', max: 3 },
 };
 function loadStyleRefState() {
@@ -1364,7 +1415,8 @@ function selectedRefs(prefix) {
 // 面板归属页决定新锚写入哪个库（scope），三页库独立互不可见
 let anchorPanelScope = 'scene';   // 面板当前挂靠页的 scope
 const SCOPE_NAMES = { scene: '场景库', character: '角色库', anim: '动作库',
-  character_ref: '人物参考库', style_ref: '画风参考库', pose_ref: '姿势参考库' };
+  character_ref: '人物参考库', style_ref: '画风参考库', pose_ref: '姿势参考库',
+  monster_ref: '怪物本体库', monster_style_ref: '怪物画风库', monster_pose_ref: '怪物姿态库' };
 function toggleAnchorPanel(zoneId) {
   const p = document.getElementById('anchor-panel');
   // 缺省 zoneId（如面板尾部「收起」按钮）：作用于面板当前挂靠页
@@ -1600,6 +1652,131 @@ async function lookupAnchor() {
 }
 let poseSel = new Set();
 let POSE_DICT = null;
+// ---- 怪物模式（立绘生成：复用编译审核链路，独立三槽库 + 怪物专用轴） ----
+let monAxisSel = {};
+async function loadMonDict() {
+  if (!DICT) DICT = await (await fetch('/api/form/dict', {headers: H()})).json();
+  // atype 下拉只留怪物类（monster_*，按 applies_to 过滤更稳）
+  const monTypes = Object.fromEntries(Object.entries(DICT.asset_types || {})
+    .filter(([k, v]) => (v.applies_to || []).includes('monster')));
+  DICT_STORE['m-atype'] = monTypes;
+  DICT_STORE['m-style'] = DICT.art_styles;
+  const at = document.getElementById('m-atype');
+  at.innerHTML = '';
+  for (const [k, v] of Object.entries(monTypes))
+    at.insertAdjacentHTML('beforeend', `<option value="${k}">${v.label || k}</option>`);
+  for (const [id, src] of [['m-style', DICT.art_styles], ['m-size', DICT.sizes]]) {
+    const el = document.getElementById(id);
+    el.innerHTML = '';
+    for (const [k, v] of Object.entries(src))
+      el.insertAdjacentHTML('beforeend', `<option value="${k}">${v.label || k}</option>`);
+  }
+  const cnt = document.getElementById('m-count');
+  cnt.innerHTML = '';
+  for (const n of [1, 2, 4, 6, 8]) cnt.insertAdjacentHTML('beforeend', `<option ${n===4?'selected':''}>${n}</option>`);
+  // 怪物适用轴
+  const ax = document.getElementById('m-axes');
+  ax.innerHTML = axesFor('monster').map(a => `
+    <div class="axis">
+      <span style="color:var(--dim);font-size:12px">${a.label}${a.desc ? ` <span style="font-size:11px">· ${a.desc}</span>` : ''}</span>
+      <div class="opts">${a.options.map(o => `
+        <span class="opt" data-maxis="${a.id}" data-opt="${o.id}" onclick="pickMonAxis(this)">${o.label}</span>`).join('')}
+      </div>
+      <div class="axis-zh desc" id="maxis-zh-${a.id}"></div>
+    </div>`).join('');
+  // 默认全选 any
+  monAxisSel = {};
+  document.querySelectorAll('#m-axes .opt').forEach(el => {
+    if (el.dataset.opt === 'any') { el.classList.add('on'); monAxisSel[el.dataset.maxis] = 'any'; }
+  });
+  // 默认值
+  document.getElementById('m-atype').value = 'monster_full';
+  document.getElementById('m-style').value = DICT.defaults.art_style;
+  document.getElementById('m-size').value = '1792x2688';
+  ['m-atype', 'm-style'].forEach(id => showDesc(document.getElementById(id)));
+  loadStyleAnchors();   // 拉怪物三槽锚库
+}
+function pickMonAxis(el) {
+  const axis = el.dataset.maxis;
+  document.querySelectorAll(`.opt[data-maxis="${axis}"]`).forEach(x => x.classList.remove('on'));
+  el.classList.add('on');
+  monAxisSel[axis] = el.dataset.opt;
+  const ax = axesFor('monster').find(a => a.id === axis);
+  const box = document.getElementById('maxis-zh-' + axis);
+  if (!ax || !box) return;
+  const opt = ax.options.find(o => o.id === el.dataset.opt);
+  if (!opt || opt.id === 'any') { box.classList.remove('show'); return; }
+  const zh = opt.zh || {};
+  const pos = (zh.positive || []).join('、');
+  const neg = (zh.negative || []).join('、');
+  box.innerHTML = `<b>${opt.label}</b> → ` +
+    (pos ? `注入：<span style="color:var(--ok)">${pos}</span>` : '') +
+    (neg ? `${pos ? ' ∣ ' : ''}排除：<span style="color:var(--bad)">${neg}</span>` : '') +
+    (opt.verify_question ? `<div style="margin-top:2px;color:var(--dim)">验图问句：${opt.verify_question}</div>` : '');
+  box.classList.add('show');
+}
+function collectMonSpec() {
+  const name = document.getElementById('m-name').value.trim();
+  if (!name) { toast('怪物名必填（= 库内组织名 = 拍板发布名）', 'bad'); return null; }
+  const desc = document.getElementById('m-desc').value.trim();
+  if (!desc) { toast('怪物描述必填（物种意象/环境/行为一句话）', 'bad'); return null; }
+  const spec = {
+    subject: name,
+    asset_name: name,
+    asset_suffix_key: 'none',
+    description: desc,
+    asset_type: document.getElementById('m-atype').value,
+    art_style: document.getElementById('m-style').value,
+    mood: 'none',   // 怪物页无氛围；威胁基调走 mon_mood 轴
+    size: document.getElementById('m-size').value,
+    count: parseInt(document.getElementById('m-count').value),
+    constraints: {
+      axis_sel: { ...monAxisSel },
+      free_text: document.getElementById('m-free').value.trim(),
+      free_text_negative: document.getElementById('m-fneg').value.trim(),
+    },
+  };
+  // 三槽位参考图：按 本体→画风→姿态 顺序拼接（本体第 1 张保造型权重），注入分工说明句
+  const refs = [...selectedRefs('mr'), ...selectedRefs('ms'), ...selectedRefs('mp')];
+  if (refs.length) {
+    spec.ref_images = refs;
+    const hasBody = styleRefSets.mr.size > 0;
+    spec.ref_role_note = hasBody
+      ? 'Reference image 1 defines the creature exact anatomy and silhouette — follow it strictly. '
+        + 'Remaining references define painting style and pose only — do not copy creatures from them.'
+      : 'All reference images define painting style and pose only — do not copy creatures from them.';
+  }
+  const ov = providerOverride();
+  if (ov && ov.api_key) spec.provider_override = ov;
+  return spec;
+}
+async function submitMonJob() {
+  const spec = collectMonSpec();
+  if (!spec) return;
+  const btn = document.getElementById('submit-mon-btn');
+  btn.textContent = '编译中…';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/compile-preview', {
+      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+      body: JSON.stringify(spec)});
+    const d = await r.json();
+    if (r.status !== 200) {
+      toast('spec 校验未通过：' + (d.detail?.message || JSON.stringify(d.detail || d)), 'bad');
+      return;
+    }
+    pendingSpec = spec;
+    pendingSpec.compiled_prompt = d.prompt;
+    pendingSpec.compiled_segments = d.segments;
+    pendingSpec.compiled_prompt_zh = d.prompt_zh || '';
+    renderReviewCard(d);
+  } catch (e) {
+    toast('编译预览失败：' + e, 'bad');
+  } finally {
+    btn.textContent = '提交怪物生成任务';
+    btn.disabled = false;
+  }
+}
 async function loadPoseDict() {
   if (!DICT) DICT = await (await fetch('/api/form/dict', {headers: H()})).json();
   POSE_DICT = DICT.character_poses || {};

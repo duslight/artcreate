@@ -66,6 +66,12 @@ asset_types:
     label: "角色三视图"
     desc: "同一角色正/侧/背三面并列，比例一致（设定表）"
     prefix: "Pixel art character turnaround sheet, front side and back views aligned, consistent proportions, neutral background"
+  # 怪物模式专用（applies_to: monster 过滤）
+  monster_full:
+    label: "怪物立绘"
+    desc: "单只怪物全身像：独特剪影、可信解剖、居中构图、简洁背景（作物种基准）"
+    applies_to: [monster]
+    prefix: "Pixel art full-body creature concept art, strong readable silhouette, believable anatomy, centered composition, simple background"
 
 # ---------- 氛围原型 → 光影氛围注入词（每条 = 单一光源概念 + 可执行物理描述） ----------
 # desc：光照作用的完整解释（表单选中即显示，解决"简写看不懂"）
@@ -264,6 +270,168 @@ constraint_axes:
           positive: ["body turned away from viewer, glancing back over shoulder"],
           zh: { positive: ["身体背向观者，回头越过肩膀凝视"] },
           verify_question: "角色是否背身回眸？" }
+
+  # ---- 怪物模式轴（applies_to: monster；设计依据：剪影优先/单一主形/一只怪物一个动词/大中小形分级） ----
+  - id: mon_body
+    label: "体型结构"
+    desc: "身体基本构型（决定剪影主形，60-70% 设计占比）"
+    applies_to: [monster]
+    options:
+      - { id: any,       label: "不限" }
+      - { id: quadruped, label: "四足兽",
+          positive: ["quadrupedal body plan, four weight-bearing legs, horizontal spine"],
+          zh: { positive: ["四足构型，四条承重腿，水平脊柱"] },
+          verify_question: "怪物是否为四足构型？" }
+      - { id: biped,     label: "直立双足",
+          positive: ["upright bipedal stance, two legs, vertical posture"],
+          zh: { positive: ["直立双足站姿，垂直体态"] },
+          verify_question: "怪物是否直立双足站立？" }
+      - { id: serpentine,label: "蛇形",
+          positive: ["serpentine elongated body, no limbs, undulating form"],
+          zh: { positive: ["蛇形修长身体，无四肢，波浪形态"] },
+          verify_question: "怪物是否为蛇形/无肢构型？" }
+      - { id: arthropod, label: "节肢多足",
+          positive: ["arthropod body plan, segmented exoskeleton, multiple jointed legs"],
+          zh: { positive: ["节肢构型，分节外骨骼，多条关节腿"] },
+          verify_question: "怪物是否为节肢/多足构型？" }
+      - { id: amorphous, label: "无定形",
+          positive: ["amorphous shifting blob form, no fixed anatomy, flowing mass"],
+          zh: { positive: ["无定形流动团块，无固定解剖"] },
+          verify_question: "怪物是否为无固定形态的团状体？" }
+      - { id: floating,  label: "悬浮体",
+          positive: ["floating levitating body, no legs, hovering above ground"],
+          zh: { positive: ["悬浮漂浮身体，无腿，离地悬浮"] },
+          verify_question: "怪物是否悬浮离地？" }
+  - id: mon_size
+    label: "体型尺度"
+    desc: "体型大小档位（影响构图比例与压迫感）"
+    applies_to: [monster]
+    options:
+      - { id: any,    label: "不限" }
+      - { id: small,  label: "小型",
+          positive: ["small creature size, comparable to a cat or fox"],
+          zh: { positive: ["小型体型，与猫或狐狸相当"] },
+          verify_question: "怪物体型是否小型（猫狐级）？" }
+      - { id: medium, label: "中型",
+          positive: ["medium creature size, comparable to a human"],
+          zh: { positive: ["中型体型，与人相当"] },
+          verify_question: "怪物体型是否中型（人类级）？" }
+      - { id: large,  label: "大型",
+          positive: ["large creature size, towering over a human, comparable to a bear or elephant"],
+          zh: { positive: ["大型体型，远超人类，与熊或象相当"] },
+          verify_question: "怪物体型是否大型（熊象级）？" }
+      - { id: huge,   label: "巨型",
+          positive: ["colossal creature size, kaiju scale, dwarfing buildings"],
+          zh: { positive: ["巨型体型，怪兽级，比建筑还大"] },
+          verify_question: "怪物体型是否巨型（建筑级以上）？" }
+  - id: mon_role
+    label: "威胁定位"
+    desc: "行为角色——一只怪物一个动词，姿态与气质由它定"
+    applies_to: [monster]
+    options:
+      - { id: any,     label: "不限" }
+      - { id: ambush,  label: "伏击者",
+          positive: ["ambush predator posture, low crouched profile, coiled readiness to strike"],
+          zh: { positive: ["伏击掠食者姿态，低伏轮廓，蓄势待扑"] },
+          verify_question: "怪物是否呈现伏击姿态（低伏蓄势）？" }
+      - { id: chaser,  label: "追猎者",
+          positive: ["pursuit predator build, long limbs, lean forward-thrusting silhouette"],
+          zh: { positive: ["追猎构型，长肢，前倾冲刺剪影"] },
+          verify_question: "怪物是否呈追猎构型（长肢前倾）？" }
+      - { id: brute,   label: "重装",
+          positive: ["heavy brute build, massive torso, thick limbs, grounded weight"],
+          zh: { positive: ["重型构型，巨躯厚肢，沉重落地感"] },
+          verify_question: "怪物是否为厚重重装构型？" }
+      - { id: swarm,   label: "群体",
+          positive: ["small swarming creature, pack behavior implied"],
+          zh: { positive: ["小型群居个体，暗示群体行为"] },
+          verify_question: "怪物是否为群居小型个体？" }
+      - { id: boss,    label: "首领",
+          positive: ["dominant boss-like presence, imposing scale, commanding posture"],
+          zh: { positive: ["首领级存在感，压场尺度，统御姿态"] },
+          verify_question: "怪物是否具有首领级存在感？" }
+  - id: mon_feature
+    label: "标志特征"
+    desc: "单一钩子——选一个记忆点（多个特征=视觉噪声）"
+    applies_to: [monster]
+    options:
+      - { id: any,     label: "不限" }
+      - { id: horns,   label: "角与獠牙",
+          positive: ["prominent horns and fangs as the single defining feature"],
+          zh: { positive: ["醒目的角与獠牙作为唯一定义特征"] },
+          verify_question: "怪物的标志特征是否为角/獠牙？" }
+      - { id: spikes,  label: "骨刺",
+          positive: ["bony spikes erupting along spine as the single defining feature"],
+          zh: { positive: ["沿脊柱隆起的骨刺作为唯一定义特征"] },
+          verify_question: "怪物的标志特征是否为骨刺？" }
+      - { id: tentacles,label: "触手",
+          positive: ["multiple tentacles as the single defining feature"],
+          zh: { positive: ["多条触手作为唯一定义特征"] },
+          verify_question: "怪物的标志特征是否为触手？" }
+      - { id: wings,   label: "翼",
+          positive: ["large wings as the single defining feature"],
+          zh: { positive: ["巨大的翼作为唯一定义特征"] },
+          verify_question: "怪物的标志特征是否为翼？" }
+      - { id: tail_wpn,label: "尾武器",
+          positive: ["weaponized tail ending in blade or club as the single defining feature"],
+          zh: { positive: ["末端呈刃或锤的武器化尾巴作为唯一定义特征"] },
+          verify_question: "怪物的标志特征是否为武器化尾部？" }
+      - { id: eyes,    label: "多眼",
+          positive: ["multiple unsettling eyes as the single defining feature"],
+          zh: { positive: ["多只不安的眼睛作为唯一定义特征"] },
+          verify_question: "怪物的标志特征是否为多眼？" }
+  - id: mon_skin
+    label: "皮肤材质"
+    desc: "体表材质（像素风下即配色与明暗逻辑）"
+    applies_to: [monster]
+    options:
+      - { id: any,     label: "不限" }
+      - { id: fur,     label: "皮毛",
+          positive: ["fur-covered hide"],
+          zh: { positive: ["覆盖皮毛的兽皮"] },
+          verify_question: "怪物体表是否为皮毛？" }
+      - { id: scales,  label: "鳞片",
+          positive: ["reptilian scales covering the body"],
+          zh: { positive: ["爬行类鳞片覆盖身体"] },
+          verify_question: "怪物体表是否为鳞片？" }
+      - { id: chitin,  label: "甲壳",
+          positive: ["hard chitinous armor plates"],
+          zh: { positive: ["坚硬的甲壳装甲板"] },
+          verify_question: "怪物体表是否为甲壳？" }
+      - { id: slime,   label: "黏液",
+          positive: ["wet slimy mucous skin, glistening surface"],
+          zh: { positive: ["湿润黏滑的皮肤，反光表面"] },
+          verify_question: "怪物体表是否为黏液质？" }
+      - { id: stone,   label: "石质",
+          positive: ["stone-like mineral hide, rocky texture"],
+          zh: { positive: ["石头般矿化表皮，岩石质感"] },
+          verify_question: "怪物体表是否为石质？" }
+      - { id: ethereal,label: "虚体",
+          positive: ["translucent ghostly ethereal body, semi-transparent"],
+          zh: { positive: ["半透明幽灵虚体"] },
+          verify_question: "怪物是否为半透明虚体？" }
+  - id: mon_mood
+    label: "威胁基调"
+    desc: "情绪可读性（圆=安全、三角=危险）"
+    applies_to: [monster]
+    options:
+      - { id: any,      label: "不限" }
+      - { id: cute,     label: "可爱",
+          positive: ["cute approachable design, rounded shapes, friendly proportions"],
+          zh: { positive: ["可爱亲和的设计，圆润造型，友好比例"] },
+          verify_question: "怪物是否为可爱亲和风？" }
+      - { id: neutral,  label: "中性",
+          positive: ["neutral temperament, neither friendly nor hostile"],
+          zh: { positive: ["中性气质，不友好也不敌对"] },
+          verify_question: "怪物气质是否中性？" }
+      - { id: danger,   label: "危险",
+          positive: ["dangerous predatory look, sharp angular shapes, threatening presence"],
+          zh: { positive: ["危险掠食感，尖锐棱角造型，威胁性存在"] },
+          verify_question: "怪物是否呈现危险掠食感？" }
+      - { id: eldritch, label: "异化恐怖",
+          positive: ["eldritch unsettling alien geometry, wrong and otherworldly anatomy"],
+          zh: { positive: ["异界不适感，错误而超然的解剖结构"] },
+          verify_question: "怪物是否呈现异化恐怖感？" }
 
 # ---------- 角色动作字典（7-B：pose-batch 逐项注入的预写英文动作词） ----------
 # inject：姿态/重心/肢体/表情四要素的纯英文物理描述（与 moods.inject 同哲学：不依赖 LLM 现编）
