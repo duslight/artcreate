@@ -184,8 +184,10 @@
     <div id="anchor-panel" style="display:none;margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:8px;background:#191b1e">
       <div style="font-size:12px;color:var(--dim);margin-bottom:8px"><span id="anchor-panel-scope" style="color:var(--acc)">建立到：场景库</span> · 三页锚库各自独立。每行独立建立：填锚点名 + 选图（png/jpg/webp，任意分辨率）。同名再传 = 迭代该锚（历史保留，最新生效）。</div>
       <div id="anchor-rows"></div>
-      <div style="display:flex;gap:8px;margin-top:8px">
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
         <button onclick="addAnchorRow()">+ 加一行</button>
+        <span style="flex:1"></span>
+        <button onclick="toggleAnchorPanel()" title="收起面板（再点「建立图片画风锚点…」可重新展开，已建立的锚不受影响）">收起</button>
       </div>
     </div>
   </div>
@@ -201,7 +203,7 @@
     <button onclick="clearParent()" style="margin-top:6px">清除迭代关系（作为全新资产）</button>
   </div>
   <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
-    <button class="go" onclick="submitJob()">提交生成任务</button>
+    <button class="go" id="submit-new-btn" onclick="submitJob()">提交生成任务</button>
     <button onclick="toggleHistoryPanel()">从历史载入迭代…</button>
   </div>
   <div id="history-panel" style="display:none;margin-top:10px;border:1px solid var(--line);border-radius:6px;padding:10px">
@@ -209,69 +211,6 @@
     <div id="history-list" style="max-height:260px;overflow-y:auto">加载中…</div>
   </div>
   <div class="idbox">身份：<input type="text" id="f-me" placeholder="你的名字（跨设备看是谁操作）" oninput="saveMe()"> <span id="f-me-id"></span></div>
-</div>
-
-<div id="review-card" class="panel" style="display:none;margin-top:14px;border-color:var(--warn)">
-  <div style="font-weight:500;color:var(--warn);margin-bottom:6px">编译审核（确认前不产生生图费用）</div>
-  <div id="review-refs" style="display:none;margin-bottom:8px"></div>
-  <div id="review-explain"></div>
-  <div id="review-lint"></div>
-  <details style="margin-top:8px" open><summary style="cursor:pointer;color:var(--dim);font-size:12px">完整 prompt（将直送生图模型）</summary>
-    <div style="background:#191b1e;border:1px solid var(--line);border-radius:6px;padding:10px;margin-top:6px">
-      <div id="review-prompt-zh" style="font-size:12px;color:var(--txt);line-height:1.7"></div>
-      <div id="review-prompt" style="font-size:11px;color:var(--dim);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);word-break:break-all"></div>
-    </div></details>
-
-  <!-- 精修模式：改中文段 → 英文段同步重译 → 重组直送（2026-08-26 方案1+同步翻译） -->
-  <div id="refine-zone" style="display:none;margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-      <span style="color:var(--acc);font-size:13px;font-weight:600">精修模式</span>
-      <!-- 双模式切换：整段=对完整中文直接改（默认，不猜模板映射）/ 分段=精准改一处 -->
-      <span class="axis">
-        <span class="opt on" id="rmode-full" onclick="setRefineMode('full')">整段直改</span>
-        <span class="opt" id="rmode-seg" onclick="setRefineMode('seg')" style="margin-left:4px">分段精修</span>
-      </span>
-    </div>
-
-    <!-- 分段视图 -->
-    <div id="refine-seg-view" style="display:none">
-      <div style="color:var(--dim);font-size:11px;margin-bottom:6px">改下面的中文 → 点「同步翻译」→ 被改段的英文自动重译 → 重组完整 prompt</div>
-      <div id="refine-segs"></div>
-    </div>
-
-    <!-- 整段直改视图：对着完整中文 prompt 改，不关心模板约束→英文的映射 -->
-    <div id="refine-full-view">
-      <div style="color:var(--dim);font-size:11px;margin-bottom:6px">直接改完整中文 prompt（含画风/氛围/排除句的中文译文）→ 点「同步翻译」→ 只重译你改的部分，未改部分英文原样保留</div>
-      <textarea id="refine-full-zh" style="min-height:110px;font-size:13px;line-height:1.7" oninput="markFullDirty()"></textarea>
-    </div>
-
-    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
-      <button class="go" style="margin-top:0" onclick="doRetranslate()" id="refine-sync-btn">同步翻译</button>
-      <span id="refine-status" style="font-size:11px;color:var(--dim)"></span>
-    </div>
-    <div style="font-size:12px;color:var(--dim);margin:10px 0 4px">重组后完整 prompt（确认生成 = 按此直送）</div>
-    <div id="refine-final" style="background:#191b1e;border:1px solid var(--acc);border-radius:6px;padding:8px 10px;font-size:11px;word-break:break-all;color:var(--txt)"></div>
-  </div>
-
-  <!-- 迭代载入后：沿用历史编译词（精修底稿 = 上次编译，改中文同步英文） -->
-  <div id="reuse-zone" style="display:none;margin-top:8px;padding:8px 10px;border:1px dashed var(--warn);border-radius:6px">
-    <div class="rz-hint" style="font-size:12px;color:var(--warn)">已携带历史编译词（迭代载入）</div>
-    <div class="rz-btns" style="display:flex;gap:8px;margin-top:6px">
-      <button class="go" style="margin-top:0" onclick="useLoadedCompile()">沿用上次编译（可精修）</button>
-      <button onclick="discardLoadedCompile()">用新编译（忽略历史）</button>
-    </div>
-  </div>
-
-  <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
-    <button class="go" onclick="confirmCompile()">确认生成（按此编译执行）</button>
-    <button onclick="closeReview()">回去修改</button>
-    <button id="refine-toggle" onclick="toggleRefine()">精修模式…</button>
-  </div>
-</div>
-
-<div id="live-zone" class="panel" style="display:none;margin-top:14px">
-  <div id="live-status" class="meta"></div>
-  <div id="live-grid"></div>
 </div>
 
 <div id="page-pose" class="panel" style="display:none">
@@ -309,7 +248,7 @@
       <textarea id="c-fneg" placeholder="例：帽子、护盾"></textarea></div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
-    <button class="go" onclick="submitCharJob()">提交立绘生成任务</button>
+    <button class="go" id="submit-char-btn" onclick="submitCharJob()">提交立绘生成任务</button>
     <span style="font-size:11px;color:var(--dim)">提交后进入编译审核 → 确认生成 → 候选拍板 → 「设为锚点」</span>
   </div>
 </div>
@@ -379,6 +318,70 @@
   <!-- 页内嵌入评审视图：postMessage 联动（ac-select-run 进 / ac-iterate 回），不再整页跳转 -->
   <iframe id="review-frame" src="/" style="width:100%;height:78vh;border:none;display:block"></iframe>
 </div>
+
+<div id="review-card" class="panel" style="display:none;margin-top:14px;border-color:var(--warn)">
+  <div style="font-weight:500;color:var(--warn);margin-bottom:6px">编译审核（确认前不产生生图费用）</div>
+  <div id="review-refs" style="display:none;margin-bottom:8px"></div>
+  <div id="review-explain"></div>
+  <div id="review-lint"></div>
+  <details style="margin-top:8px" open><summary style="cursor:pointer;color:var(--dim);font-size:12px">完整 prompt（将直送生图模型）</summary>
+    <div style="background:#191b1e;border:1px solid var(--line);border-radius:6px;padding:10px;margin-top:6px">
+      <div id="review-prompt-zh" style="font-size:12px;color:var(--txt);line-height:1.7"></div>
+      <div id="review-prompt" style="font-size:11px;color:var(--dim);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);word-break:break-all"></div>
+    </div></details>
+
+  <!-- 精修模式：改中文段 → 英文段同步重译 → 重组直送（2026-08-26 方案1+同步翻译） -->
+  <div id="refine-zone" style="display:none;margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span style="color:var(--acc);font-size:13px;font-weight:600">精修模式</span>
+      <!-- 双模式切换：整段=对完整中文直接改（默认，不猜模板映射）/ 分段=精准改一处 -->
+      <span class="axis">
+        <span class="opt on" id="rmode-full" onclick="setRefineMode('full')">整段直改</span>
+        <span class="opt" id="rmode-seg" onclick="setRefineMode('seg')" style="margin-left:4px">分段精修</span>
+      </span>
+    </div>
+
+    <!-- 分段视图 -->
+    <div id="refine-seg-view" style="display:none">
+      <div style="color:var(--dim);font-size:11px;margin-bottom:6px">改下面的中文 → 点「同步翻译」→ 被改段的英文自动重译 → 重组完整 prompt</div>
+      <div id="refine-segs"></div>
+    </div>
+
+    <!-- 整段直改视图：对着完整中文 prompt 改，不关心模板约束→英文的映射 -->
+    <div id="refine-full-view">
+      <div style="color:var(--dim);font-size:11px;margin-bottom:6px">直接改完整中文 prompt（含画风/氛围/排除句的中文译文）→ 点「同步翻译」→ 只重译你改的部分，未改部分英文原样保留</div>
+      <textarea id="refine-full-zh" style="min-height:110px;font-size:13px;line-height:1.7" oninput="markFullDirty()"></textarea>
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <button class="go" style="margin-top:0" onclick="doRetranslate()" id="refine-sync-btn">同步翻译</button>
+      <span id="refine-status" style="font-size:11px;color:var(--dim)"></span>
+    </div>
+    <div style="font-size:12px;color:var(--dim);margin:10px 0 4px">重组后完整 prompt（确认生成 = 按此直送）</div>
+    <div id="refine-final" style="background:#191b1e;border:1px solid var(--acc);border-radius:6px;padding:8px 10px;font-size:11px;word-break:break-all;color:var(--txt)"></div>
+  </div>
+
+  <!-- 迭代载入后：沿用历史编译词（精修底稿 = 上次编译，改中文同步英文） -->
+  <div id="reuse-zone" style="display:none;margin-top:8px;padding:8px 10px;border:1px dashed var(--warn);border-radius:6px">
+    <div class="rz-hint" style="font-size:12px;color:var(--warn)">已携带历史编译词（迭代载入）</div>
+    <div class="rz-btns" style="display:flex;gap:8px;margin-top:6px">
+      <button class="go" style="margin-top:0" onclick="useLoadedCompile()">沿用上次编译（可精修）</button>
+      <button onclick="discardLoadedCompile()">用新编译（忽略历史）</button>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+    <button class="go" onclick="confirmCompile()">确认生成（按此编译执行）</button>
+    <button onclick="closeReview()">回去修改</button>
+    <button id="refine-toggle" onclick="toggleRefine()">精修模式…</button>
+  </div>
+</div>
+
+<div id="live-zone" class="panel" style="display:none;margin-top:14px">
+  <div id="live-status" class="meta"></div>
+  <div id="live-grid"></div>
+</div>
+
 
 <div id="page-lineage" style="display:none"></div>
 
@@ -671,7 +674,7 @@ async function submitJob() {
     return;
   }
   // 位置A：先同步编译 → 审核卡（中英对照+lint）→ 确认才入队
-  const btn = document.querySelector('#page-new .go');
+  const btn = document.getElementById('submit-new-btn');
   btn.textContent = '编译中…';
   btn.disabled = true;
   try {
@@ -1328,7 +1331,8 @@ function selectedRefs(prefix) {
 let anchorPanelScope = 'scene';   // 面板当前挂靠页的 scope
 function toggleAnchorPanel(zoneId) {
   const p = document.getElementById('anchor-panel');
-  const zone = document.getElementById(zoneId || 'style-ref-zone');
+  // 缺省 zoneId（如面板尾部「收起」按钮）：作用于面板当前挂靠页
+  const zone = document.getElementById(zoneId) || p.parentElement;
   const openedHere = p.parentElement === zone && p.style.display !== 'none';
   if (openedHere) { p.style.display = 'none'; return; }   // 同页再点 = 收起
   zone.appendChild(p);   // 面板移动到当前页
@@ -1499,7 +1503,7 @@ function collectCharSpec() {
 async function submitCharJob() {
   const spec = collectCharSpec();
   if (!spec) return;
-  const btn = document.querySelector('#page-pose .go');
+  const btn = document.getElementById('submit-char-btn');
   btn.textContent = '编译中…';
   btn.disabled = true;
   try {
