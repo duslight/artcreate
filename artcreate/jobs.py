@@ -162,6 +162,7 @@ def _worker_loop():
 
             # ref_images 相对路径 → 仓库根绝对路径（不依赖进程 cwd；
             # 风格锚/角色锚存的都是 exports/... 相对路径）
+            cfg = get_config()
             refs = spec.get("ref_images")
             if isinstance(refs, list) and refs:
                 refs = [str(cfg.root / r) if not Path(r).is_absolute() else r
