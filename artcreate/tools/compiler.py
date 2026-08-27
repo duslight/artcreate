@@ -150,6 +150,11 @@ def compile_prompt(spec: dict) -> dict:
     full = ", ".join(p.strip().rstrip(".") for p in parts if p and p.strip())
     if neg_items:
         full += ". Strictly avoid: " + ", ".join(neg_items) + "."
+    # 三槽位参考图分工说明（2026-08-27）：告知模型各参考图用途，
+    # 顺序语义（第1张管长相）方舟 API 无显式标签，靠此句 + 拼接顺序软约束
+    ref_note = str(spec.get("ref_role_note") or "").strip()
+    if ref_note:
+        full += " " + ref_note
     return {
         "prompt": full,
         "segments": {  # 分段结构落 manifest（消融实验/溯源 D19）

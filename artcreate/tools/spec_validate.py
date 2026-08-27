@@ -19,6 +19,7 @@ TOP_FIELDS = {
     "compiled_prompt", "compiled_segments",   # 审核直通（位置A：所见即所执行）
     "prompt_reused", "compiled_prompt_zh",    # 历史编译词复用（精修底稿）
     "provider_override",                     # 自定义生图 API（worker 执行前剥离，不落库）
+    "ref_role_note",                         # 三槽位参考图分工说明句（编译时注入 prompt 尾部）
 }
 CONSTRAINTS_FIELDS = {"axis_sel", "free_text", "free_text_negative"}
 

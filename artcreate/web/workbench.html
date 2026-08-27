@@ -230,17 +230,30 @@
     <div><label>尺寸</label><select id="c-size"></select></div>
     <div><label>数量 <span style="font-size:11px;color:var(--dim)">每 1 张图成本≈0.2 元</span></label><select id="c-count"></select></div>
   </div>
-  <label>约束轴（角色适用：取景/背景/朝向/打光。打光替代场景页的"氛围"——氛围是场景概念，角色只需光源）</label>
+  <label>约束轴（角色适用：取景/背景/朝向/姿势。姿势管立绘构图——光感交由画风与参考图）</label>
   <div id="c-axes"></div>
-  <!-- 风格参考（角色立绘同样可挂：画风+形象双锚定） -->
-  <div id="char-style-ref-zone" style="margin-top:10px">
-    <label>风格参考（可选：锁定画风/质感，最多 3 张）</label>
-    <div id="char-style-ref-list" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
-    <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
-      <button onclick="toggleAnchorPanel('char-style-ref-zone')">建立图片画风锚点…</button>
-      <span id="char-anchor-cap" style="font-size:11px;color:var(--dim)"></span>
+  <!-- 参考图三槽位（人物/画风/姿势 各 1 张，分工直送：第1张管长相，其余管画风姿势） -->
+  <div id="char-ref-slots" style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+    <div class="ref-slot" data-slot="character_ref" style="flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:8px">
+      <label style="margin-bottom:4px">人物参考 <span style="font-size:10px;color:var(--dim)">管长相/服装（排第1张）</span></label>
+      <div class="slot-list" style="display:flex;gap:6px;flex-wrap:wrap;min-height:34px"></div>
+      <button class="slot-manage" onclick="toggleAnchorPanel('char-slot-character_ref')" style="margin-top:6px;font-size:11px">上传/管理…</button>
+    </div>
+    <div class="ref-slot" data-slot="style_ref" style="flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:8px">
+      <label style="margin-bottom:4px">画风参考 <span style="font-size:10px;color:var(--dim)">管笔触/配色</span></label>
+      <div class="slot-list" style="display:flex;gap:6px;flex-wrap:wrap;min-height:34px"></div>
+      <button class="slot-manage" onclick="toggleAnchorPanel('char-slot-style_ref')" style="margin-top:6px;font-size:11px">上传/管理…</button>
+    </div>
+    <div class="ref-slot" data-slot="pose_ref" style="flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:8px">
+      <label style="margin-bottom:4px">姿势参考 <span style="font-size:10px;color:var(--dim)">管姿势/构图</span></label>
+      <div class="slot-list" style="display:flex;gap:6px;flex-wrap:wrap;min-height:34px"></div>
+      <button class="slot-manage" onclick="toggleAnchorPanel('char-slot-pose_ref')" style="margin-top:6px;font-size:11px">上传/管理…</button>
     </div>
   </div>
+  <div id="char-slot-character_ref" style="display:none"></div>
+  <div id="char-slot-style_ref" style="display:none"></div>
+  <div id="char-slot-pose_ref" style="display:none"></div>
+  <div style="font-size:11px;color:var(--dim);margin-top:4px">三槽各挂 1 张（初始空置，点锚卡启用/再点取消）；提交按 人物→画风→姿势 顺序直送，并注入分工说明。锚库全员共通、服务器持久。</div>
   <div class="row" style="margin-top:10px">
     <div><label>正向自由约束（描述"应该是什么"）</label>
       <textarea id="c-free" placeholder="例：左手持弓，右手垂放"></textarea></div>
@@ -1233,9 +1246,12 @@ let ANCHOR_MAX = 12;
 const STYLE_REF_KEY = 'ac-style-refs';
 // 页面标识 → {listId, selSet, storeKey（=后端 scope）, capId, zoneId}
 const STYLE_REF_PAGES = {
-  f:    { listId: 'style-ref-list',      storeKey: 'scene',     capId: 'anchor-cap',      zoneId: 'style-ref-zone' },
-  c:    { listId: 'char-style-ref-list', storeKey: 'character', capId: 'char-anchor-cap', zoneId: 'char-style-ref-zone' },
-  anim: { listId: 'anim-style-ref-list', storeKey: 'anim',      capId: 'anim-anchor-cap', zoneId: 'anim-style-ref-zone' },
+  f:    { listId: 'style-ref-list',   storeKey: 'scene',          capId: 'anchor-cap',      zoneId: 'style-ref-zone',      max: 3 },
+  // 角色页三槽位（2026-08-27）：人物/画风/姿势 各 1 张互斥单选，提交按序拼接
+  cr:   { listId: null,               storeKey: 'character_ref',  zoneId: 'char-slot-character_ref', max: 1, slot: true },
+  cs:   { listId: null,               storeKey: 'style_ref',      zoneId: 'char-slot-style_ref',     max: 1, slot: true },
+  cp:   { listId: null,               storeKey: 'pose_ref',       zoneId: 'char-slot-pose_ref',      max: 1, slot: true },
+  anim: { listId: 'anim-style-ref-list', storeKey: 'anim',        capId: 'anim-anchor-cap', zoneId: 'anim-style-ref-zone', max: 3 },
 };
 function loadStyleRefState() {
   let saved = {};
@@ -1275,31 +1291,35 @@ async function loadStyleAnchors() {
   for (const [k, cfgp] of Object.entries(STYLE_REF_PAGES)) {
     const names = new Set((STYLE_ANCHORS[cfgp.storeKey] || []).map(a => a.character));
     for (const n of [...styleRefSets[k]]) if (!names.has(n)) styleRefSets[k].delete(n);
-    const cap = document.getElementById(cfgp.capId);
+    const cap = cfgp.capId ? document.getElementById(cfgp.capId) : null;
     if (cap) cap.textContent = `锚库 ${(STYLE_ANCHORS[cfgp.storeKey] || []).length}/${ANCHOR_MAX} · 单次生成最多挂 3 张`;
   }
   for (const p of Object.keys(STYLE_REF_PAGES)) renderStyleRefs(p);
 }
 function renderStyleRefs(prefix) {
   const cfgp = STYLE_REF_PAGES[prefix];
-  const list = document.getElementById(cfgp.listId);
+  // 槽位模式：渲染到 .ref-slot[data-slot=scope] 的 .slot-list 内
+  const list = cfgp.slot
+    ? document.querySelector(`.ref-slot[data-slot="${cfgp.storeKey}"] .slot-list`)
+    : document.getElementById(cfgp.listId);
   if (!list) return;
   const anchors = STYLE_ANCHORS[cfgp.storeKey] || [];
   const selSet = styleRefSets[prefix];
   if (!anchors.length) {
-    list.innerHTML = '<span style="font-size:12px;color:var(--dim)">暂无风格锚——点上方「建立图片画风锚点…」上传本地图</span>';
+    list.innerHTML = `<span style="font-size:11px;color:var(--dim);align-self:center">${cfgp.slot ? '空槽——点下方「上传/管理…」建锚' : '暂无风格锚——点上方「建立图片画风锚点…」上传本地图'}</span>`;
     return;
   }
   list.innerHTML = anchors.map(a => {
     const url = refImgUrl(a.image_path);
     const on = selSet.has(a.character);
+    const sz = cfgp.slot ? 54 : 64;
     return `
     <div title="${a.note || ''}"
       style="border:2px solid ${on ? 'var(--acc)' : 'var(--line)'};border-radius:8px;padding:2px">
       <div onclick="toggleStyleRef('${prefix}','${a.character}')" style="cursor:pointer"
         onmouseover="this.parentElement.style.borderColor='${on ? 'var(--acc)' : '#4a4f57'}'"
         onmouseout="this.parentElement.style.borderColor='${on ? 'var(--acc)' : 'var(--line)'}'">
-        ${url ? `<img src="${url}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;display:block">` : ''}
+        ${url ? `<img src="${url}" style="width:${sz}px;height:${sz}px;object-fit:cover;border-radius:6px;display:block">` : ''}
         <div style="font-size:11px;text-align:center;margin-top:2px;color:${on ? 'var(--acc)' : 'var(--dim)'}">${a.character}${a.total > 1 ? '·' + a.total : ''}</div>
       </div>
       <div style="text-align:center;margin-top:1px">
@@ -1310,10 +1330,15 @@ function renderStyleRefs(prefix) {
   }).join('');
 }
 function toggleStyleRef(prefix, name) {
+  const cfgp = STYLE_REF_PAGES[prefix];
   const selSet = styleRefSets[prefix];
+  const max = cfgp.max || 3;
   if (selSet.has(name)) selSet.delete(name);
   else {
-    if (selSet.size >= 3) { toast('风格参考最多 3 张（过多会互相稀释）', 'info'); return; }
+    if (selSet.size >= max) {
+      toast(cfgp.slot ? '该槽位仅挂 1 张（点已选锚卡取消后再换）' : '风格参考最多 3 张（过多会互相稀释）', 'info');
+      return;
+    }
     selSet.add(name);
   }
   saveStyleRefState(prefix);
@@ -1329,6 +1354,8 @@ function selectedRefs(prefix) {
 // 单例面板：三个资产页各有入口按钮，点谁面板就挂到谁的参考区下方；
 // 面板归属页决定新锚写入哪个库（scope），三页库独立互不可见
 let anchorPanelScope = 'scene';   // 面板当前挂靠页的 scope
+const SCOPE_NAMES = { scene: '场景库', character: '角色库', anim: '动作库',
+  character_ref: '人物参考库', style_ref: '画风参考库', pose_ref: '姿势参考库' };
 function toggleAnchorPanel(zoneId) {
   const p = document.getElementById('anchor-panel');
   // 缺省 zoneId（如面板尾部「收起」按钮）：作用于面板当前挂靠页
@@ -1341,7 +1368,7 @@ function toggleAnchorPanel(zoneId) {
   const page = Object.values(STYLE_REF_PAGES).find(cfg => cfg.zoneId === zone.id);
   anchorPanelScope = page ? page.storeKey : 'scene';
   document.getElementById('anchor-panel-scope').textContent =
-    `建立到：${{scene:'场景库', character:'角色库', anim:'动作库'}[anchorPanelScope]}`;
+    `建立到：${SCOPE_NAMES[anchorPanelScope] || anchorPanelScope}`;
   if (!document.getElementById('anchor-rows').children.length)
     for (let i = 0; i < 3; i++) addAnchorRow();   // 初始 3 行
 }
@@ -1485,7 +1512,7 @@ function collectCharSpec() {
     description: desc,
     asset_type: document.getElementById('c-atype').value,
     art_style: document.getElementById('c-style').value,
-    mood: 'none',   // 角色页无氛围（场景概念）；光源走 char_light 轴
+    mood: 'none',   // 角色页无氛围（场景概念）；姿势走 char_pose 轴
     size: document.getElementById('c-size').value,
     count: parseInt(document.getElementById('c-count').value),
     constraints: {
@@ -1494,8 +1521,16 @@ function collectCharSpec() {
       free_text_negative: document.getElementById('c-fneg').value.trim(),
     },
   };
-  const refs = selectedRefs('c');
-  if (refs.length) spec.ref_images = refs;
+  // 三槽位参考图：按 人物→画风→姿势 顺序拼接（人物第 1 张保形象权重），注入分工说明句
+  const refs = [...selectedRefs('cr'), ...selectedRefs('cs'), ...selectedRefs('cp')];
+  if (refs.length) {
+    spec.ref_images = refs;
+    const hasChar = styleRefSets.cr.size > 0;
+    spec.ref_role_note = hasChar
+      ? 'Reference image 1 defines the character exact appearance (face, hair, outfit) — follow it strictly. '
+        + 'Remaining references define painting style and pose only — do not copy characters from them.'
+      : 'All reference images define painting style and pose only — do not copy characters from them.';
+  }
   const ov = providerOverride();
   if (ov && ov.api_key) spec.provider_override = ov;
   return spec;

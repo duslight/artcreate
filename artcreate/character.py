@@ -77,7 +77,12 @@ CREATE TABLE IF NOT EXISTS anchors (
 """
 
 
-STYLE_SCOPES = ("scene", "character", "anim")
+# scope：风格/参考锚按用途分库。
+#   旧三库（2026-08-26）：scene 场景页 / character 角色页 / anim 动作页
+#   角色页三槽位（2026-08-27）：character_ref 人物 / style_ref 画风 / pose_ref 姿势
+#     —— 三槽各挂 1 张，提交时按 人物→画风→姿势 顺序拼接 + 分工说明句
+STYLE_SCOPES = ("scene", "character", "anim",
+                "character_ref", "style_ref", "pose_ref")
 
 
 def init_character():
