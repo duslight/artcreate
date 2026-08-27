@@ -141,6 +141,22 @@ def get_spec(run_id: str):
 
 # 静态评审页
 STATIC_DIR = Path(__file__).parent / "web"
+
+
+# HTML 入口禁缓存：页面 JS 迭代频繁，浏览器缓存旧版会踩"修复不生效"的坑
+# （图片等静态资源仍走 StaticFiles 默认策略，只拦 .html）
+@app.get("/workbench.html")
+def _workbench_nocache():
+    return FileResponse(STATIC_DIR / "workbench.html",
+                        headers={"Cache-Control": "no-cache, must-revalidate"})
+
+
+@app.get("/index.html")
+def _index_nocache():
+    return FileResponse(STATIC_DIR / "index.html",
+                        headers={"Cache-Control": "no-cache, must-revalidate"})
+
+
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="web")
 
 
