@@ -250,9 +250,10 @@
       <button class="slot-manage" onclick="toggleAnchorPanel('char-slot-pose_ref')" style="margin-top:6px;font-size:11px">上传/管理…</button>
     </div>
   </div>
-  <div id="char-slot-character_ref" style="display:none"></div>
-  <div id="char-slot-style_ref" style="display:none"></div>
-  <div id="char-slot-pose_ref" style="display:none"></div>
+  <!-- 三槽锚面板挂载点（可见容器：面板挂入即显示，空置时不占空间） -->
+  <div id="char-slot-character_ref"></div>
+  <div id="char-slot-style_ref"></div>
+  <div id="char-slot-pose_ref"></div>
   <div style="font-size:11px;color:var(--dim);margin-top:4px">三槽各挂 1 张（初始空置，点锚卡启用/再点取消）；提交按 人物→画风→姿势 顺序直送，并注入分工说明。锚库全员共通、服务器持久。</div>
   <div class="row" style="margin-top:10px">
     <div><label>正向自由约束（描述"应该是什么"）</label>
@@ -1371,6 +1372,7 @@ function toggleAnchorPanel(zoneId) {
     `建立到：${SCOPE_NAMES[anchorPanelScope] || anchorPanelScope}`;
   if (!document.getElementById('anchor-rows').children.length)
     for (let i = 0; i < 3; i++) addAnchorRow();   // 初始 3 行
+  p.scrollIntoView({block: 'nearest', behavior: 'smooth'});   // 面板可能在视口外（如三槽区下方），滚进视野
 }
 function addAnchorRow() {
   const rows = document.getElementById('anchor-rows');
