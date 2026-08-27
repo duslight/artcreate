@@ -78,12 +78,12 @@
   <div class="panel main" id="main"><div class="empty">左侧选择一次 run</div></div>
 </div>
 <dialog id="zoom"><img id="zoomImg" onclick="this.parentElement.close()"></dialog>
-<script src="/dlg.js"></script>
+<script src="dlg.js"></script>
 <script>
 let curRun = null;
 
 async function loadRuns() {
-  const rs = await (await fetch('/api/runs')).json();
+  const rs = await (await fetch('api/runs')).json();
   const el = document.getElementById('runs');
   el.innerHTML = rs.map(r => `
     <div class="run-item ${curRun===r.run_id?'active':''}" onclick="sel('${r.run_id}')">
@@ -96,7 +96,7 @@ async function loadRuns() {
 async function sel(runId) {
   curRun = runId;
   loadRuns();
-  const d = await (await fetch(`/api/runs/${runId}/candidates`)).json();
+  const d = await (await fetch(`api/runs/${runId}/candidates`)).json();
   curData = d;
   render(d);
   loadConsistency(runId);
@@ -106,7 +106,7 @@ let consMap = {};
 async function loadConsistency(runId) {
   consMap = {};
   try {
-    const r = await fetch(`/api/runs/${runId}/consistency`, {headers:H()});
+    const r = await fetch(`api/runs/${runId}/consistency`, {headers:H()});
     if (!r.ok) return;
     const d = await r.json();
     d.reports.forEach(x => consMap[x.idx] = x);
@@ -162,7 +162,7 @@ function render(d) {
     const actionable = c.status === 'generated' || c.status === 'gated';
     return `
     <div class="card" data-idx="${c.idx}">
-      <img src="/api/images/${d.run.subject}/${d.run.run_id}/${c.file}"
+      <img src="api/images/${d.run.subject}/${d.run.run_id}/${c.file}"
            onclick="zoom(this.src)" loading="lazy">
       <div class="bar">
         <span>#${c.idx}</span> ${badge(c.status)}
@@ -195,7 +195,7 @@ function refineRun(btn) {
     window.parent.postMessage({ type: 'ac-iterate', runId: curRun }, '*');
   } else {
     localStorage.setItem('ac-goto-iterate', curRun);
-    location.href = '/workbench.html';
+    location.href = 'workbench.html';
   }
 }
 let explainLoaded = false;
@@ -205,7 +205,7 @@ function toggleExplain() {
   if (!explainLoaded && p.style.display !== 'none') loadExplain();
 }
 async function loadExplain() {
-  const r = await fetch(`/api/spec/${curRun}`, {headers:H()});
+  const r = await fetch(`api/spec/${curRun}`, {headers:H()});
   if (!r.ok) return;
   const d = await r.json();
   const p = document.getElementById('explain-panel');
@@ -223,13 +223,13 @@ function loadThisRun() {
     window.parent.postMessage({ type: 'ac-iterate', runId: curRun }, '*');
   } else {
     localStorage.setItem('ac-goto-iterate', curRun);
-    location.href = '/workbench.html';
+    location.href = 'workbench.html';
   }
 }
 
 async function regen() {
   if (!await acConfirm({title: '再次生成', message: '同 spec 再生成一批？（revision 不变，记录迭代链）', okText: '生成'})) return;
-  const r = await fetch(`/api/runs/${curRun}/regenerate`, {method:'POST', headers:H()});
+  const r = await fetch(`api/runs/${curRun}/regenerate`, {method:'POST', headers:H()});
   if (r.ok) { const j = await r.json(); toast('已入队，任务 #' + j.job_id, 'ok'); loadRuns(); }
   else toast('入队失败', 'bad');
 }
@@ -245,7 +245,7 @@ async function makeAnchor(idx, btn) {
   btn.disabled = true;
   try {
     const image_path = `exports/${d.run.subject}/${d.run.run_id}/${d.candidates[idx] ? d.candidates[idx].file : ''}`;
-    const r = await fetch(`/api/characters/${encodeURIComponent(charName)}/anchor`, {
+    const r = await fetch(`api/characters/${encodeURIComponent(charName)}/anchor`, {
       method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
       body: JSON.stringify({
         image_path,
@@ -278,10 +278,10 @@ async function act(kind, idx, btn) {
     if (kind === 'reject') {
       const code = await acPrompt({title: '拒绝候选 #' + idx, message: '拒绝码：style_drift / composition / constraint_violation / other', value: 'manual'});
       if (code === null) { if (card) card.querySelectorAll('.bar button').forEach(b => b.disabled = false); return; }
-      await fetch(`/api/runs/${curRun}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
+      await fetch(`api/runs/${curRun}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
       toast(`#${idx} 已拒绝`, 'info');
     } else {
-      const r = await fetch(`/api/runs/${curRun}/candidates/${idx}/accept`, {method:'POST', headers:H()});
+      const r = await fetch(`api/runs/${curRun}/candidates/${idx}/accept`, {method:'POST', headers:H()});
       const d = await r.json().catch(() => ({}));
       if (d.final_name) toast(`已拍板发布：exports/final/${d.final_name}.png`, 'ok');
       else toast(`#${idx} 接受失败：` + (d.detail || '未知错误'), 'bad');
@@ -308,7 +308,7 @@ function H() {
   return h;
 }
 async function showLineage() {
-  const d = await (await fetch(`/api/runs/${curRun}/lineage`, {headers:H()})).json();
+  const d = await (await fetch(`api/runs/${curRun}/lineage`, {headers:H()})).json();
   const chain = [...d.ancestors, {run_id: curRun, cur: true}, ...d.children];
   const html = `<div class="lin">${chain.map(n =>
     `<span class="node ${n.cur?'cur':''}" onclick="sel('${n.run_id}')">${n.run_id}${n.revision ? ' · rev' + n.revision : ''}</span>`

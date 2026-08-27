@@ -384,7 +384,7 @@
 
 <div id="page-review" class="panel" style="display:none;padding:0;overflow:hidden">
   <!-- 页内嵌入评审视图：postMessage 联动（ac-select-run 进 / ac-iterate 回），不再整页跳转 -->
-  <iframe id="review-frame" src="/" style="width:100%;height:78vh;border:none;display:block"></iframe>
+  <iframe id="review-frame" src="index.html" style="width:100%;height:78vh;border:none;display:block"></iframe>
 </div>
 
 <div id="review-card" class="panel" style="display:none;margin-top:14px;border-color:var(--warn)">
@@ -453,7 +453,7 @@
 
 <div id="page-lineage" style="display:none"></div>
 
-<script src="/dlg.js"></script>
+<script src="dlg.js"></script>
 <script>
 let DICT = null;
 let axisSel = {};
@@ -538,9 +538,9 @@ async function loadProp(status) {
   propFilter = status || propFilter;
   ['pending','promoted','rejected'].forEach(s =>
     document.getElementById('pbtn-' + s).classList.toggle('on', s === propFilter));
-  const ps = await (await fetch('/api/proposals?status=' + propFilter, {headers: H()})).json();
+  const ps = await (await fetch('api/proposals?status=' + propFilter, {headers: H()})).json();
   // 徽标：待定数
-  const pend = await (await fetch('/api/proposals?status=pending', {headers: H()})).json();
+  const pend = await (await fetch('api/proposals?status=pending', {headers: H()})).json();
   const badge = document.getElementById('prop-badge');
   badge.style.display = pend.length ? '' : 'none';
   badge.textContent = pend.length;
@@ -568,7 +568,7 @@ async function loadProp(status) {
 async function actProp(pid, kind) {
   if (kind === 'reject' && !await acConfirm({title: '驳回提案', message: '驳回该提案？', okText: '驳回', danger: true})) return;
   if (kind === 'approve' && !await acConfirm({title: '晋升选项', message: '晋升为新选项？全部用户表单将出现该选项，且写入 derived 版本库', okText: '晋升'})) return;
-  const r = await fetch(`/api/proposals/${pid}/${kind}`, {method:'POST', headers:H()});
+  const r = await fetch(`api/proposals/${pid}/${kind}`, {method:'POST', headers:H()});
   const d = await r.json();
   if (r.status !== 200) { toast('失败：' + JSON.stringify(d.detail || d), 'bad'); return; }
   if (d.git_commit) toast('已提交版本库 ' + d.git_commit, 'ok');
@@ -576,7 +576,7 @@ async function actProp(pid, kind) {
   loadDict();  // 字典可能已变（晋升后表单刷新）
 }
 async function runDistill() {
-  const r = await fetch('/api/distill/run', {method:'POST', headers:H()});
+  const r = await fetch('api/distill/run', {method:'POST', headers:H()});
   const d = await r.json();
   toast(r.status === 200
     ? `蒸馏完成：采样 ${d.harvested} · LLM 判定 ${d.judged} · 新提案 ${d.new_proposals}`
@@ -594,7 +594,7 @@ function showDesc(sel) {
   else { box.classList.remove('show'); }
 }
 async function loadDict() {
-  DICT = await (await fetch('/api/form/dict', {headers: H()})).json();
+  DICT = await (await fetch('api/form/dict', {headers: H()})).json();
   DICT_STORE['f-atype'] = DICT.asset_types;
   const sceneStyles = stylesFor('scene');
   DICT_STORE['f-style'] = sceneStyles;
@@ -721,7 +721,7 @@ async function submitJob() {
                 segments: pendingSpec.compiled_segments,
                 explain: [], lint: [], spec_issues: [] };
     try {
-      const resp = await fetch('/api/translate-prompt', {
+      const resp = await fetch('api/translate-prompt', {
         method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
         body: JSON.stringify({ prompt: loadedCompile.prompt }),
       });
@@ -759,7 +759,7 @@ async function submitJob() {
   btn.textContent = '编译中…';
   btn.disabled = true;
   try {
-    const r = await fetch('/api/compile-preview', {
+    const r = await fetch('api/compile-preview', {
       method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
       body: JSON.stringify(spec)});
     const d = await r.json();
@@ -932,7 +932,7 @@ async function doRetranslate() {
   btn.disabled = true; btn.textContent = '重译中…';
   document.getElementById('refine-status').textContent = '';
   try {
-    const resp = await fetch('/api/retranslate', {
+    const resp = await fetch('api/retranslate', {
       method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
       body: JSON.stringify({ items }),
     });
@@ -972,7 +972,7 @@ async function doRetranslateFull() {
   btn.disabled = true; btn.textContent = '对齐重译中…';
   document.getElementById('refine-status').textContent = '';
   try {
-    const resp = await fetch('/api/retranslate-full', {
+    const resp = await fetch('api/retranslate-full', {
       method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
       body: JSON.stringify({ orig_zh: refineFull.orig_zh,
                              orig_en: refineFull.orig_en,
@@ -1050,7 +1050,7 @@ async function useLoadedCompile() {
   document.getElementById('review-prompt').textContent = loadedCompile.prompt;
   // 中文底稿：历史 run 通常没存 prompt_zh，译一次（同 compile-preview 的译法）
   try {
-    const resp = await fetch('/api/translate-prompt', {
+    const resp = await fetch('api/translate-prompt', {
       method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
       body: JSON.stringify({ prompt: loadedCompile.prompt }),
     });
@@ -1084,7 +1084,7 @@ async function confirmCompile() {
   if (!pendingSpec) return;
   const spec = pendingSpec;
   closeReview();
-  const r = await fetch('/api/jobs', { method: 'POST', headers: {'Content-Type': 'application/json', ...H()}, body: JSON.stringify(spec) });
+  const r = await fetch('api/jobs', { method: 'POST', headers: {'Content-Type': 'application/json', ...H()}, body: JSON.stringify(spec) });
   const d = await r.json();
   if (r.status !== 200) {
     toast('入队被拦截：' + (d.detail?.message || JSON.stringify(d.detail || d)), 'bad');
@@ -1101,7 +1101,7 @@ function trackJob(jobId) {
   zone.dataset.ownerPage = currentPage();   // 记录属主页：切页隔离显示
   zone.style.display = '';
   trackTimer = setInterval(async () => {
-    const j = await (await fetch(`/api/jobs/${jobId}`, {headers: H()})).json();
+    const j = await (await fetch(`api/jobs/${jobId}`, {headers: H()})).json();
     const card = document.getElementById('live-status');
     if (j.status === 'queued') {
       card.innerHTML = `<span class="st-queued">● 排队中</span> <span class="meta">#${j.id}</span>`;
@@ -1121,13 +1121,13 @@ function trackJob(jobId) {
 }
 async function card_loop() { /* 兼容占位 */ }
 async function loadLiveCandidates(runId) {
-  const d = await (await fetch(`/api/runs/${runId}/candidates`, {headers: H()})).json();
+  const d = await (await fetch(`api/runs/${runId}/candidates`, {headers: H()})).json();
   const grid = document.getElementById('live-grid');
   grid.innerHTML = `
     <div style="font-size:12px;color:var(--dim);margin:8px 0 6px">候选（接受/拒绝就地完成，拍板即发布 exports/final/）</div>
     <div class="lgrid">${d.candidates.map(c => `
       <div class="lcard" data-idx="${c.idx}">
-        <img src="/api/images/${d.run.subject}/${runId}/${c.file}" loading="lazy" onclick="zoomLive(this.src)">
+        <img src="api/images/${d.run.subject}/${runId}/${c.file}" loading="lazy" onclick="zoomLive(this.src)">
         <div class="lbar">
           <span>#${c.idx}</span><span class="lst-${c.status}">${c.status}</span>
           <span style="flex:1"></span>
@@ -1150,10 +1150,10 @@ async function liveAct(kind, idx, btn) {
     if (kind === 'reject') {
       const code = await acPrompt({title: '拒绝候选 #' + idx, message: '拒绝码：style_drift / composition / constraint_violation / other', value: 'manual'});
       if (code === null) { if (card) card.querySelectorAll('.lbar button').forEach(b => b.disabled = false); return; }
-      await fetch(`/api/runs/${runId}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
+      await fetch(`api/runs/${runId}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
       toast(`#${idx} 已拒绝`, 'info');
     } else {
-      const r = await fetch(`/api/runs/${runId}/candidates/${idx}/accept`, {method:'POST', headers:H()});
+      const r = await fetch(`api/runs/${runId}/candidates/${idx}/accept`, {method:'POST', headers:H()});
       const d = await r.json().catch(() => ({}));
       if (d.final_name) toast(`已拍板发布：exports/final/${d.final_name}.png`, 'ok');
       else toast(`#${idx} 接受失败：` + (d.detail || '未知错误'), 'bad');
@@ -1164,7 +1164,7 @@ async function liveAct(kind, idx, btn) {
     return;
   }
   // 处置后检查：无待定候选（全部接受/拒绝完毕）→ 收起出图区；仍有待定 → 刷新列表继续
-  const d = await (await fetch(`/api/runs/${runId}/candidates`, {headers: H()})).json();
+  const d = await (await fetch(`api/runs/${runId}/candidates`, {headers: H()})).json();
   const pending = (d.candidates || []).filter(c => c.status === 'generated' || c.status === 'gated');
   if (pending.length) {
     loadLiveCandidates(runId);
@@ -1193,7 +1193,7 @@ async function liveMakeAnchor(idx, runId, btn) {
   const card = btn ? btn.closest('.lcard') : null;
   const file = card ? card.querySelector('img').src.split('/').pop() : '';
   try {
-    const r = await fetch(`/api/characters/${encodeURIComponent(charName)}/anchor`, {
+    const r = await fetch(`api/characters/${encodeURIComponent(charName)}/anchor`, {
       method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
       body: JSON.stringify({
         image_path: `exports/${subject}/${runId}/${file}`,
@@ -1224,7 +1224,7 @@ function toggleHistoryPanel() {
   if (open) loadHistoryList();
 }
 async function loadHistoryList() {
-  HIST_RUNS = await (await fetch('/api/runs', {headers: H()})).json();
+  HIST_RUNS = await (await fetch('api/runs', {headers: H()})).json();
   const el = document.getElementById('history-list');
   el.innerHTML = HIST_RUNS.slice(0, 30).map((r, i) => `
     <div class="hist-item" onclick="pickHistory(${i})" style="display:flex;gap:8px;align-items:center;
@@ -1244,7 +1244,7 @@ async function pickHistory(i) {
   toast(`已载入 ${r.subject}（rev${r.revision}）· 历史编译词已直达精修`, 'ok');
 }
 async function fillFromRun(runId, meta) {
-  const full = await (await fetch(`/api/spec/${runId}`, {headers: H()})).json();
+  const full = await (await fetch(`api/spec/${runId}`, {headers: H()})).json();
   const spec = full.spec || {};
   document.getElementById('f-aname').value = spec.asset_name || spec.subject || '';
   document.getElementById('f-asuffix').value = spec.asset_suffix_key || 'none';
@@ -1360,14 +1360,14 @@ function refImgUrl(image_path) {
   // exports/<subject>/<run_id>/<file> 三段式；_style_anchors 亦同构
   const parts = (image_path || '').replace(/^exports\//, '').split('/');
   return parts.length === 3
-    ? `/api/images/${encodeURIComponent(parts[0])}/${parts[1]}/${parts[2]}` : '';
+    ? `api/images/${encodeURIComponent(parts[0])}/${parts[1]}/${parts[2]}` : '';
 }
 async function loadStyleAnchors() {
   // 三页各自拉库（scope 独立）；失败容错——页缺省为空数组
   const scopes = [...new Set(Object.values(STYLE_REF_PAGES).map(p => p.storeKey))];
   const results = await Promise.all(scopes.map(async sc => {
     try {
-      const r = await fetch(`/api/style-anchors?scope=${sc}`, {headers: H()});
+      const r = await fetch(`api/style-anchors?scope=${sc}`, {headers: H()});
       if (!r.ok) return [sc, {anchors: [], max: ANCHOR_MAX}];
       return [sc, await r.json()];
     } catch (e) { return [sc, {anchors: [], max: ANCHOR_MAX}]; }
@@ -1490,7 +1490,7 @@ async function submitAnchorRow(btn) {
   fd.append('note', `管理面板 ${file.name}`);
   fd.append('file', file);
   try {
-    const r = await fetch('/api/style-anchors/upload', {method: 'POST', headers: H(), body: fd});
+    const r = await fetch('api/style-anchors/upload', {method: 'POST', headers: H(), body: fd});
     const d = await r.json().catch(() => ({}));
     if (r.ok) {
       msg.style.color = 'var(--ok)';
@@ -1514,7 +1514,7 @@ async function deleteStyleAnchor(prefix, name) {
   // prefix 定位页（scope）——只删该页库中的同名锚，其他页不受影响
   const sc = STYLE_REF_PAGES[prefix].storeKey;
   if (!await acConfirm({title: '删除风格锚', message: `删除「${name}」？该锚全部迭代将移除，挂载中的引用自动清出。`, okText: '删除', danger: true})) return;
-  const r = await fetch(`/api/style-anchors/${encodeURIComponent(name)}?scope=${sc}`, {method: 'DELETE', headers: H()});
+  const r = await fetch(`api/style-anchors/${encodeURIComponent(name)}?scope=${sc}`, {method: 'DELETE', headers: H()});
   const d = await r.json().catch(() => ({}));
   if (r.ok) {
     toast(`已删除「${name}」（${d.deleted} 条）`, 'ok');
@@ -1537,7 +1537,7 @@ function stylesFor(mode) {
     !v.applies_to || v.applies_to.includes(mode)));
 }
 async function loadCharDict() {
-  if (!DICT) DICT = await (await fetch('/api/form/dict', {headers: H()})).json();
+  if (!DICT) DICT = await (await fetch('api/form/dict', {headers: H()})).json();
   // atype 下拉只留角色两类（character_full/character_sheet）
   const charTypes = Object.fromEntries(Object.entries(DICT.asset_types || {})
     .filter(([k]) => k.startsWith('character_')));
@@ -1639,7 +1639,7 @@ async function submitCharJob() {
   btn.textContent = '编译中…';
   btn.disabled = true;
   try {
-    const r = await fetch('/api/compile-preview', {
+    const r = await fetch('api/compile-preview', {
       method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
       body: JSON.stringify(spec)});
     const d = await r.json();
@@ -1665,7 +1665,7 @@ async function lookupAnchor() {
   const zone = document.getElementById('anchor-zone');
   zone.style.display = '';
   const info = document.getElementById('anchor-info');
-  const r = await fetch(`/api/characters/${encodeURIComponent(name)}/anchor`, {headers: H()});
+  const r = await fetch(`api/characters/${encodeURIComponent(name)}/anchor`, {headers: H()});
   if (r.status === 404) { info.innerHTML = `<span style="color:var(--dim)">「${name}」尚无锚点——先生成立绘，拍板后点「设为锚点」</span>`; return; }
   if (!r.ok) { info.textContent = '查询失败：' + r.status; return; }
   const d = await r.json();
@@ -1673,7 +1673,7 @@ async function lookupAnchor() {
   // image_path 格式 exports/<subject>/<run_id>/<file> → 走三段式图片端点
   const parts = (a.image_path || '').replace(/^exports\//, '').split('/');
   const img = parts.length === 3
-    ? `/api/images/${encodeURIComponent(parts[0])}/${parts[1]}/${parts[2]}` : '';
+    ? `api/images/${encodeURIComponent(parts[0])}/${parts[1]}/${parts[2]}` : '';
   info.innerHTML = `
     <div style="display:flex;gap:12px;align-items:flex-start">
       ${img ? `<img src="${img}" style="width:110px;border:1px solid var(--line);border-radius:6px" onclick="zoomLive('${img}')">` : ''}
@@ -1690,7 +1690,7 @@ let POSE_DICT = null;
 // ---- 怪物模式（立绘生成：复用编译审核链路，独立三槽库 + 怪物专用轴） ----
 let monAxisSel = {};
 async function loadMonDict() {
-  if (!DICT) DICT = await (await fetch('/api/form/dict', {headers: H()})).json();
+  if (!DICT) DICT = await (await fetch('api/form/dict', {headers: H()})).json();
   // atype 下拉只留怪物类（monster_*，按 applies_to 过滤更稳）
   const monTypes = Object.fromEntries(Object.entries(DICT.asset_types || {})
     .filter(([k, v]) => (v.applies_to || []).includes('monster')));
@@ -1793,7 +1793,7 @@ async function submitMonJob() {
   btn.textContent = '编译中…';
   btn.disabled = true;
   try {
-    const r = await fetch('/api/compile-preview', {
+    const r = await fetch('api/compile-preview', {
       method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
       body: JSON.stringify(spec)});
     const d = await r.json();
@@ -1814,7 +1814,7 @@ async function submitMonJob() {
   }
 }
 async function loadPoseDict() {
-  if (!DICT) DICT = await (await fetch('/api/form/dict', {headers: H()})).json();
+  if (!DICT) DICT = await (await fetch('api/form/dict', {headers: H()})).json();
   POSE_DICT = DICT.character_poses || {};
   const el = document.getElementById('pose-list');
   el.innerHTML = Object.entries(POSE_DICT).map(([id, p]) => `
@@ -1852,7 +1852,7 @@ async function submitPoses() {
   };
   const ov = providerOverride();
   if (ov && ov.api_key) body.provider_override = ov;
-  const r = await fetch(`/api/characters/${encodeURIComponent(char)}/pose-batch`, {
+  const r = await fetch(`api/characters/${encodeURIComponent(char)}/pose-batch`, {
     method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
     body: JSON.stringify(body),
   });
@@ -1867,13 +1867,13 @@ async function submitPoses() {
 
 // ---- 任务 ----
 async function loadJobs(auto) {
-  const js = await (await fetch('/api/jobs', {headers: H()})).json();
+  const js = await (await fetch('api/jobs', {headers: H()})).json();
   const el = document.getElementById('jobs-list');
   el.innerHTML = js.map(j => `
     <div class="job">
       <span class="st-${j.status}">● ${j.status}</span>
       <span class="meta">#${j.id} · ${j.actor_name || j.actor_id} · ${j.created_at}</span>
-      ${j.run_id ? `<div><a href="/#run-${j.run_id}" onclick="goReview('${j.run_id}')">→ 查看候选 ${j.run_id}</a></div>` : ''}
+      ${j.run_id ? `<div><a href="#" onclick="event.preventDefault();goReview('${j.run_id}')">→ 查看候选 ${j.run_id}</a></div>` : ''}
       ${j.progress && j.status === 'running' ? `<div class="meta">${j.progress}…</div>` : ''}
       ${j.error ? `<div class="meta" style="color:var(--bad);white-space:pre-wrap">${j.error.split('\n')[0]}</div>` : ''}
     </div>`).join('') || '<div class="empty">暂无任务</div>';
@@ -1911,8 +1911,8 @@ async function loadFeed() {
   // 两请求两用途：evs=筛选后展示，actors=筛选项来源（修复：旧代码解构 3 变量，
   // actors undefined → .map 抛异常 → 静默失败 → 时间线永远空白）
   const [evs, actors] = await Promise.all([
-    fetch(`/api/events?limit=100${document.getElementById('ev-action').value ? '&action=' + document.getElementById('ev-action').value : ''}${document.getElementById('ev-actor').value ? '&actor_id=' + document.getElementById('ev-actor').value : ''}`, {headers: H()}).then(r => r.json()),
-    fetch('/api/events?limit=200', {headers: H()}).then(r => r.json()),
+    fetch(`api/events?limit=100${document.getElementById('ev-action').value ? '&action=' + document.getElementById('ev-action').value : ''}${document.getElementById('ev-actor').value ? '&actor_id=' + document.getElementById('ev-actor').value : ''}`, {headers: H()}).then(r => r.json()),
+    fetch('api/events?limit=200', {headers: H()}).then(r => r.json()),
   ]).catch(() => [[], []]);
   const visible = evs.filter(e => !FEED_HIDDEN_ACTIONS.has(e.action));
   const actorsVis = actors.filter(e => !FEED_HIDDEN_ACTIONS.has(e.action));

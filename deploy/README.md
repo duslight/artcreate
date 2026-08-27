@@ -60,9 +60,11 @@ systemctl status artcreate          # 应为 active (running)
 journalctl -u artcreate -f          # 看日志（uvicorn 启动 + worker 心跳）
 ```
 
-## 6. 直接访问（无 nginx）
+## 6. 访问方式（两种，二选一或并存）
 
-服务绑定 0.0.0.0（systemd unit 已配置 `--host 0.0.0.0`）：
+### 6a. 直接访问（8870 端口）
+
+服务绑定 0.0.0.0（systemd unit 已配置 `--host 0.0.0.0`），需在防火墙放行 8870：
 
 ```bash
 # 浏览器直接打开（任何设备）：
@@ -70,14 +72,37 @@ http://<公网IP>:8870/            # 评审视图
 http://<公网IP>:8870/workbench.html   # 工作台
 ```
 
-> 曾经的 nginx 反代 + HTTPS 方案已移除（域名路线废弃）。若未来需要 HTTPS，
-> 再考虑加反代或 caddy；当前令牌鉴权（X-Token）已覆盖基本访问控制。
+### 6b. nginx 子路径反代（/artcreate/，不开新端口）
+
+与服务器上已有服务（80 端口 nginx）共存的部署方式，**无需在安全组开 8870**。
+前端已全部改为相对路径（2026-08-27 起），子路径开箱即用。
+
+```bash
+# 把本目录 nginx-artcreate-subpath.conf 的 location 块插入 server{} 内：
+sudo vim /etc/nginx/sites-available/default
+#   （或 sudo nano，把 conf 文件内容粘到 server { ... } 里面）
+sudo nginx -t && sudo systemctl reload nginx
+# 若 reload 后不生效（此前部署遇到过）：sudo systemctl restart nginx
+```
+
+访问 URL：
+
+```
+http://<公网IP>/artcreate/workbench.html    # 工作台
+http://<公网IP>/artcreate/                  # 评审视图
+```
+
+关键点：`proxy_pass http://127.0.0.1:8870/;` 结尾的 `/` 不可省——
+它负责把 `/artcreate/xxx` 映射为后端的 `/xxx`（去前缀）。
+
+> 曾经的 nginx HTTPS 方案已移除（域名路线废弃）。当前令牌鉴权（X-Token）已覆盖基本访问控制。
 
 ## 7. 验收
 
 ```bash
-curl http://127.0.0.1:8870/api/events?limit=1 -H "X-Token: xxx"   # 应返回 JSON
-# 浏览器：http://<公网IP>:8870/workbench.html
+curl http://127.0.0.1:8870/api/events?limit=1 -H "X-Token: xxx"   # 应返回 JSON（直连模式）
+curl http://127.0.0.1/artcreate/api/events?limit=1 -H "X-Token: xxx"  # 反代模式（nginx 生效后）
+# 浏览器：http://<公网IP>/artcreate/workbench.html 或 http://<公网IP>:8870/workbench.html
 #   1) 令牌栏填 WORKBENCH_TOKEN
 #   2) 提交一个小批量任务 → 轮询到 done → 跳评审视图
 #   3) 提案页应显示历史蒸馏提案
