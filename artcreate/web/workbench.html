@@ -140,7 +140,8 @@
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
     <span style="color:var(--dim);font-size:11px;min-width:60px">生成资产</span>
     <button id="nav-new" class="on" onclick="show('new')">场景 / 静物</button>
-    <button id="nav-pose" onclick="show('pose')">角色 / 怪物</button>
+    <button id="nav-pose" onclick="show('pose')">角色生成</button>
+    <button id="nav-monster" onclick="show('monster')">怪物生成</button>
     <button id="nav-anim" onclick="show('anim')">动作 / 特效</button>
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
@@ -264,6 +265,13 @@
   <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
     <button class="go" id="submit-char-btn" onclick="submitCharJob()">提交立绘生成任务</button>
     <span style="font-size:11px;color:var(--dim)">提交后进入编译审核 → 确认生成 → 候选拍板 → 「设为锚点」</span>
+  </div>
+</div>
+
+<!-- 怪物生成（独立于角色页：非人形生物设计，约束轴/编译词/画风待方案对齐后填充） -->
+<div id="page-monster" class="panel" style="display:none">
+  <div style="font-size:13px;color:var(--dim);padding:18px 0">
+    怪物生成页面建设中——约束轴（体型/生物类别/威胁度…）、LLM 编译词、推荐画风正在设计中，对齐后开放。
   </div>
 </div>
 
@@ -454,7 +462,7 @@ function H() { return { ...actorHeaders(), ...tok() }; }
 
 // ---- 页面切换 ----
 function show(p) {
-  for (const x of ['new', 'pose', 'anim', 'jobs', 'feed', 'prop', 'review']) {
+  for (const x of ['new', 'pose', 'monster', 'anim', 'jobs', 'feed', 'prop', 'review']) {
     const pg = document.getElementById('page-' + x);
     if (pg) pg.style.display = x === p ? '' : 'none';
     document.getElementById('nav-' + x).classList.toggle('on', x === p);
