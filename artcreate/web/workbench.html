@@ -154,7 +154,7 @@
 </nav>
 
 <div id="page-new" class="panel" style="display:none">
-  <div class="idbox">身份：<input type="text" id="f-me" placeholder="你的名字（跨设备看是谁操作）" oninput="saveMe()"> <span id="f-me-id"></span></div>
+  <div class="idbox">身份：<input type="text" id="f-me" placeholder="你的名字" oninput="saveMe()"> <span id="f-me-id"></span></div>
   <div class="row">
     <div><label>资产名</label><input type="text" id="f-aname" placeholder="例：shrine_forest" oninput="previewName()"></div>
     <div style="max-width:180px"><label>后缀</label><select id="f-asuffix" onchange="previewName()"></select><div class="desc" id="desc-f-asuffix"></div></div>
@@ -231,7 +231,7 @@
     <div><label>尺寸</label><select id="c-size"></select></div>
     <div><label>数量 <span style="font-size:11px;color:var(--dim)">每 1 张图成本≈0.26 元</span></label><select id="c-count"></select></div>
   </div>
-  <label>约束轴（角色适用：取景/背景/朝向/姿势。姿势管立绘构图——光感交由画风与参考图）</label>
+  <label>约束轴</label>
   <div id="c-axes"></div>
   <!-- 参考图三槽位（人物/画风/姿势 各 1 张，分工直送：第1张管长相，其余管画风姿势） -->
   <div id="char-ref-slots" style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
@@ -255,7 +255,7 @@
   <div id="char-slot-character_ref"></div>
   <div id="char-slot-style_ref"></div>
   <div id="char-slot-pose_ref"></div>
-  <div style="font-size:11px;color:var(--dim);margin-top:4px">三槽各挂 1 张（初始空置，点锚卡启用/再点取消）；提交按 人物→画风→姿势 顺序直送，并注入分工说明。锚库全员共通、服务器持久。</div>
+  <div style="font-size:11px;color:var(--dim);margin-top:4px">3个槽位可以各自挂载1张图片参考（初始空置，点击图片锚卡启用/取消）</div>
   <div class="row" style="margin-top:10px">
     <div><label>正向自由约束（描述"应该是什么"）</label>
       <textarea id="c-free" placeholder="例：左手持弓，右手垂放"></textarea></div>
@@ -284,7 +284,7 @@
     <div><label>尺寸</label><select id="m-size"></select></div>
     <div><label>数量 <span style="font-size:11px;color:var(--dim)">每 1 张图成本≈0.26 元</span></label><select id="m-count"></select></div>
   </div>
-  <label>约束轴（怪物适用：背景/体型结构/尺度/威胁定位/标志特征/皮肤材质/威胁基调）</label>
+  <label>约束轴</label>
   <div id="m-axes"></div>
   <!-- 参考图三槽位（本体/画风/姿态 各 1 张，分工直送：第1张管造型，其余管画风姿态） -->
   <div id="mon-ref-slots" style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
@@ -308,7 +308,7 @@
   <div id="mon-slot-monster_ref"></div>
   <div id="mon-slot-monster_style_ref"></div>
   <div id="mon-slot-monster_pose_ref"></div>
-  <div style="font-size:11px;color:var(--dim);margin-top:4px">三槽各挂 1 张（初始空置，点锚卡启用/再点取消）；提交按 本体→画风→姿态 顺序直送，并注入分工说明。怪物锚库独立于角色库，服务器持久。</div>
+  <div style="font-size:11px;color:var(--dim);margin-top:4px">3个槽位可以各自挂载1张图片参考（初始空置，点击图片锚卡启用/取消）</div>
   <div class="row" style="margin-top:10px">
     <div><label>正向自由约束（描述"应该是什么"）</label>
       <textarea id="m-free" placeholder="例：背脊有火焰喷射孔，喉囊发亮"></textarea></div>

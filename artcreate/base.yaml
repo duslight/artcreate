@@ -207,7 +207,7 @@ constraint_axes:
           verify_question: "画面是否为半身取景（腰部以上）？" }
   - id: char_bg
     label: "背景"
-    desc: "立绘背景复杂度（影响抠图与复用）"
+    desc: "立绘背景复杂度"
     applies_to: [character]
     options:
       - { id: any,      label: "不限" }
@@ -223,7 +223,7 @@ constraint_axes:
           verify_question: "画面是否带主题场景背景？" }
   - id: char_facing
     label: "朝向"
-    desc: "角色面向（三视图/动作变体的朝向基准）"
+    desc: "角色面向"
     applies_to: [character]
     options:
       - { id: any,      label: "不限" }
@@ -241,7 +241,7 @@ constraint_axes:
           verify_question: "角色是否背向观者？" }
   - id: char_pose
     label: "姿势"
-    desc: "立绘中角色摆出的姿势构图（角色页替代「打光」：光感交由画风与参考图，姿势才是立绘的可控变量）"
+    desc: "立绘中角色摆出的姿势构图"
     applies_to: [character]
     options:
       - { id: any,      label: "不限" }
@@ -281,7 +281,7 @@ constraint_axes:
   # ---- 怪物模式轴（applies_to: monster；设计依据：剪影优先/单一主形/一只怪物一个动词/大中小形分级） ----
   - id: mon_bg
     label: "背景"
-    desc: "立绘背景复杂度（影响抠图与复用）"
+    desc: "立绘背景复杂度"
     applies_to: [monster]
     options:
       - { id: any,      label: "不限" }
@@ -297,7 +297,7 @@ constraint_axes:
           verify_question: "画面是否带主题场景背景？" }
   - id: mon_body
     label: "体型结构"
-    desc: "身体基本构型（决定剪影主形，60-70% 设计占比）"
+    desc: "身体基本构型"
     applies_to: [monster]
     options:
       - { id: any,       label: "不限" }
@@ -327,7 +327,7 @@ constraint_axes:
           verify_question: "怪物是否悬浮离地？" }
   - id: mon_size
     label: "体型尺度"
-    desc: "体型大小档位（影响构图比例与压迫感）"
+    desc: "体型大小档位"
     applies_to: [monster]
     options:
       - { id: any,    label: "不限" }
@@ -349,7 +349,7 @@ constraint_axes:
           verify_question: "怪物体型是否巨型（建筑级以上）？" }
   - id: mon_role
     label: "威胁定位"
-    desc: "行为角色——一只怪物一个动词，姿态与气质由它定"
+    desc: "行为角色"
     applies_to: [monster]
     options:
       - { id: any,     label: "不限" }
@@ -375,7 +375,7 @@ constraint_axes:
           verify_question: "怪物是否具有首领级存在感？" }
   - id: mon_feature
     label: "标志特征"
-    desc: "单一钩子——选一个记忆点（多个特征=视觉噪声）"
+    desc: "单一钩子"
     applies_to: [monster]
     options:
       - { id: any,     label: "不限" }
@@ -405,7 +405,7 @@ constraint_axes:
           verify_question: "怪物的标志特征是否为多眼？" }
   - id: mon_skin
     label: "皮肤材质"
-    desc: "体表材质（像素风下即配色与明暗逻辑）"
+    desc: "体表材质"
     applies_to: [monster]
     options:
       - { id: any,     label: "不限" }
@@ -435,7 +435,7 @@ constraint_axes:
           verify_question: "怪物是否为半透明虚体？" }
   - id: mon_mood
     label: "威胁基调"
-    desc: "情绪可读性（圆=安全、三角=危险）"
+    desc: "情绪可读性"
     applies_to: [monster]
     options:
       - { id: any,      label: "不限" }
