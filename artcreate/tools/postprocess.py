@@ -54,7 +54,32 @@ def quantize_palette(small_bgra: np.ndarray, max_colors: int) -> np.ndarray:
     return out
 
 
-def pixelate(src_path: Path, dst_path: Path, thumb_size: int = 512):
+def remove_solid_bg(img_bgra: np.ndarray, tol: int = 40) -> np.ndarray:
+    """纯色底抠图：四角洪水填充判定背景色，容差内全透明。
+
+    像素风色块干净（量化后背景必为单一纯色），四角取样可靠。
+    主体若触边（贴边裁切）不抠——保主体完整性，交给人工处理。
+    """
+    h, w = img_bgra.shape[:2]
+    corners = [img_bgra[0, 0], img_bgra[0, w-1],
+               img_bgra[h-1, 0], img_bgra[h-1, w-1]]
+    bgr = np.array([c[:3] for c in corners], dtype=int)
+    # 四角色差过大 = 背景不均匀，放弃自动抠
+    if (bgr.max(axis=0) - bgr.min(axis=0)).max() > tol * 2:
+        return img_bgra
+    bg = bgr.mean(axis=0).astype(np.uint8)
+    diff = np.abs(img_bgra[:, :, :3].astype(int) - bg.astype(int)).sum(axis=2)
+    out = img_bgra.copy()
+    out[diff <= tol * 3, 3] = 0   # 容差内 → alpha=0
+    return out
+
+
+# 自动抠图的资产类型（纯色底 → 透明 sprite）
+SPRITE_TYPES = ("pose_sprite", "vfx_sprite")
+
+
+def pixelate(src_path: Path, dst_path: Path, thumb_size: int = 512,
+             remove_bg: bool = False):
     """网格检测 → INTER_AREA 缩到网格 → 调色板量化 → NEAREST 放大回原尺寸
     同时产出 thumb_N.jpg 缩略图（定稿全保+候选缩略）。
     max_colors 从 gates.mechanical.palette 读（与门禁同源：量化=64 则覆盖率必达标）。"""
@@ -73,6 +98,8 @@ def pixelate(src_path: Path, dst_path: Path, thumb_size: int = 512):
     small = cv2.resize(img, (gw, gh), interpolation=cv2.INTER_AREA)
     small = quantize_palette(small, max_colors)
     out = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+    if remove_bg:
+        out = remove_solid_bg(out)
     if not imwrite_unicode(dst_path, out):
         raise ValueError(f"成品写入失败: {dst_path}")
 
@@ -91,15 +118,19 @@ def pixelate(src_path: Path, dst_path: Path, thumb_size: int = 512):
             "palette_colors": max_colors}
 
 
-def process_run(raw_urls, out_dir: Path):
-    """一次 run 的全部候选图：raw_N.png（留档）+ out_N.png（成品）→ 后处理元数据列表"""
+def process_run(raw_urls, out_dir: Path, asset_type: str = ""):
+    """一次 run 的全部候选图：raw_N.png（留档）+ out_N.png（成品）→ 后处理元数据列表
+    asset_type 属 SPRITE_TYPES 时自动抠纯色底输出透明 sprite。"""
     out_dir.mkdir(parents=True, exist_ok=True)
+    remove_bg = asset_type in SPRITE_TYPES
     meta = []
     for i, url in enumerate(raw_urls, 1):
         raw_path = out_dir / f"raw_{i}.png"
         out_path = out_dir / f"out_{i}.png"
         download(url, raw_path)
-        info = pixelate(raw_path, out_path)
+        info = pixelate(raw_path, out_path, remove_bg=remove_bg)
         info["index"] = i
+        if remove_bg:
+            info["transparent"] = True
         meta.append(info)
     return meta

@@ -86,7 +86,8 @@ CREATE TABLE IF NOT EXISTS anchors (
 #     —— 独立于角色库，互不污染；提交按 本体→画风→姿态 顺序拼接
 STYLE_SCOPES = ("scene", "character", "anim",
                 "character_ref", "style_ref", "pose_ref",
-                "monster_ref", "monster_style_ref", "monster_pose_ref")
+                "monster_ref", "monster_style_ref", "monster_pose_ref",
+                "vfx")   # 特效页风格锚库（元素色/质感基准，2026-08-28）
 
 
 def init_character():

@@ -83,6 +83,65 @@ asset_types:
     desc: "单只怪物全身像：独特剪影、可信解剖、居中构图、简洁背景（作物种基准）"
     applies_to: [monster]
     prefix: "Pixel art full-body creature concept art, strong readable silhouette, believable anatomy, centered composition, simple background"
+  # 动作/特效页专用（后处理自动抠纯色底 → 透明 sprite；ui_hidden 不进三页下拉）
+  pose_sprite:
+    label: "无背景动作图"
+    desc: "锚点同形象换动作，纯色平涂底（成品自动抠透明，可直接进引擎）"
+    prefix: "Pixel art full-body character sprite, exactly the same character as the reference image (same face, hair, outfit, colors), new dynamic pose only, standing on a completely flat solid magenta background (#FF00FF), no scenery, no environment, no ground shadow"
+    ui_hidden: true
+  vfx_sprite:
+    label: "无背景特效"
+    desc: "居中单主体特效，纯色平涂底（成品自动抠透明）"
+    prefix: "Pixel art VFX sprite, single centered effect, bright saturated colors, crisp readable shape, on a completely flat solid magenta background (#FF00FF), no scenery, no environment, no characters"
+    ui_hidden: true
+
+# ---------- 特效元素系（vfx 页：元素色一致性基准） ----------
+# 依据 Unity RPG VFX 包/PVFX Foundry 归类：火水风土雷冰光暗毒 + 无（无色系如烟尘）
+vfx_elements:
+  fire:   { label: "火", colors: "red, orange, yellow, white-hot core",
+            desc: "红橙黄渐变，核心白热" }
+  water:  { label: "水", colors: "cyan, blue, white foam highlights",
+            desc: "青蓝主体，白色泡沫高光" }
+  wind:   { label: "风", colors: "pale green, white, light cyan streaks",
+            desc: "淡绿/白色流线" }
+  earth:  { label: "土", colors: "brown, ochre, stone gray",
+            desc: "棕褐与岩石灰" }
+  lightning: { label: "雷", colors: "electric blue, bright white, violet edges",
+            desc: "电蓝白紫，高对比" }
+  ice:    { label: "冰", colors: "pale cyan, ice blue, white sparkle",
+            desc: "青白冰晶，闪点高光" }
+  holy:   { label: "光", colors: "golden white, warm radiance",
+            desc: "金白色圣光" }
+  dark:   { label: "暗", colors: "deep purple, dark violet, black smoke",
+            desc: "深紫黑烟" }
+  poison: { label: "毒", colors: "toxic green, purple fumes",
+            desc: "毒绿紫雾" }
+  none:   { label: "无", colors: "neutral gray, white smoke",
+            desc: "无元素色系（烟尘/物理打击）" }
+
+# ---------- 特效形态（vfx 页：功能形态模板，元素×形态二维组合） ----------
+# 依据 spritesynth VFX 指南 + PVFX Foundry 品类：形态决定构图语言
+vfx_forms:
+  projectile: { label: "弹体", inject: "a glowing projectile orb with trailing energy streaks, horizontal flight direction",
+            desc: "飞行弹体+拖尾" }
+  slash:      { label: "斩击", inject: "a crescent arc slash effect, sharp sweeping motion trail",
+            desc: "弧形斩击轨迹" }
+  explosion:  { label: "爆炸", inject: "a radial explosion burst with expanding shockwave ring and scattered debris sparks",
+            desc: "中心爆开+冲击环+碎屑" }
+  shield:     { label: "护盾", inject: "a spherical protective barrier dome with hexagonal energy pattern",
+            desc: "球形护罩/六边纹" }
+  aura:       { label: "光环", inject: "a ground aura circle with rising particle wisps, looping ambient glow",
+            desc: "脚下光环+上升粒子" }
+  charge:     { label: "聚集", inject: "energy gathering inward, converging particles compressing toward a bright core",
+            desc: "能量向心聚集" }
+  impact:     { label: "打击", inject: "an instantaneous hit spark burst, star-shaped flash lines radiating from center",
+            desc: "命中火花/星芒闪" }
+  portal:     { label: "传送门", inject: "an elliptical swirling portal ring with spiraling energy vortex",
+            desc: "椭圆漩涡门" }
+  heal:       { label: "治疗", inject: "gentle rising light motes and soft radiant cross shimmer",
+            desc: "上升光点+柔和光辉" }
+  smoke:      { label: "烟尘", inject: "a soft billowing smoke puff cloud, diffused round shapes",
+            desc: "蓬松烟团" }
 
 # ---------- 氛围原型 → 光影氛围注入词（每条 = 单一光源概念 + 可执行物理描述） ----------
 # desc：光照作用的完整解释（表单选中即显示，解决"简写看不懂"）

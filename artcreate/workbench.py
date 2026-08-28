@@ -74,6 +74,8 @@ def form_dict(request: Request, x_token: str = Header(None)):
                   if not v.get("ui_hidden")},
         "character_poses": cfg.character_poses,
         "asset_suffixes": cfg.asset_suffixes,
+        "vfx_elements": cfg.vfx_elements,
+        "vfx_forms": cfg.vfx_forms,
         "constraint_axes": axes,
     }
 
@@ -523,3 +525,58 @@ def api_pose_batch(name: str, request: Request, body: dict,
     jobs_mod.init_jobs()
     job_id = jobs_mod.submit_job(spec, _actor(x_actor_id, x_actor_name))
     return {"job_id": job_id, "poses": poses, "count_each": count_each}
+
+
+# ---------- 特效生成（固定模板：元素系 × 形态 → 无背景 sprite） ----------
+@router.post("/api/vfx")
+def api_vfx(request: Request, body: dict,
+            x_token: str = Header(None),
+            x_actor_id: str = Header(None), x_actor_name: str = Header(None)):
+    """特效页提交：body={asset_name, vfx_element, vfx_form, size?, count?,
+    asset_suffix_key?, style_refs?, provider_override?}。
+    元素×形态从字典取注入词，走 vfx_sprite 资产类型（纯色底自动抠透明）。"""
+    _check_token(request, x_token)
+    from . import jobs as jobs_mod
+    name = (body.get("asset_name") or "").strip()
+    if not name:
+        raise HTTPException(422, "特效名必填")
+    el = body.get("vfx_element")
+    fm = body.get("vfx_form")
+    elements = cfg.vfx_elements
+    forms = cfg.vfx_forms
+    if el not in elements:
+        raise HTTPException(422, f"未知元素系：{el}（现有：{sorted(elements)}）")
+    if fm not in forms:
+        raise HTTPException(422, f"未知特效形态：{fm}（现有：{sorted(forms)}）")
+    count = body.get("count", 1)
+    if count > 8:
+        raise HTTPException(422, "单次不超过 8 张（防误烧钱）")
+    style_refs = body.get("style_refs") or []
+    if len(style_refs) > 3:
+        raise HTTPException(422, "风格参考最多 3 张")
+    override = body.get("provider_override") or None
+    if override and not override.get("api_key"):
+        raise HTTPException(422, "自定义 API 缺少 api_key")
+
+    # 元素色 + 形态语言 → 自由约束（编译进正向区）
+    free = ", ".join(x for x in [
+        forms[fm].get("inject"),
+        f"color scheme: {elements[el].get('colors')}",
+        "single effect only"] if x)
+    spec = {
+        "subject": name,
+        "asset_name": name,
+        "asset_suffix_key": body.get("asset_suffix_key") or "fx",
+        "description": f"{elements[el].get('label', el)}系{forms[fm].get('label', fm)}特效",
+        "asset_type": "vfx_sprite",
+        "art_style": cfg.defaults.get("art_style", "perfect_pixel"),
+        "mood": "none",
+        "size": body.get("size") or "2688x2688",
+        "count": count,
+        "constraints": {"free_text": free},
+        "ref_images": style_refs,
+        "vfx": {"element": el, "form": fm},
+    }
+    jobs_mod.init_jobs()
+    job_id = jobs_mod.submit_job(spec, _actor(x_actor_id, x_actor_name))
+    return {"job_id": job_id, "element": el, "form": fm, "count": count}

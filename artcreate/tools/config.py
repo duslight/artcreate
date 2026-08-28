@@ -127,6 +127,14 @@ class Config:
         return self._raw.get("asset_suffixes", {})
 
     @property
+    def vfx_elements(self):
+        return self._raw.get("vfx_elements", {})
+
+    @property
+    def vfx_forms(self):
+        return self._raw.get("vfx_forms", {})
+
+    @property
     def constraint_axes(self):
         return self._raw["constraint_axes"]
 

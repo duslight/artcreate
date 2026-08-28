@@ -142,7 +142,8 @@
     <button id="nav-new" class="on" onclick="show('new')">场景 / 静物</button>
     <button id="nav-pose" onclick="show('pose')">角色生成</button>
     <button id="nav-monster" onclick="show('monster')">怪物生成</button>
-    <button id="nav-anim" onclick="show('anim')">动作 / 特效</button>
+    <button id="nav-anim" onclick="show('anim')">角色动作</button>
+    <button id="nav-vfx" onclick="show('vfx')">特效</button>
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
     <span style="color:var(--dim);font-size:11px;min-width:60px">审校管理</span>
@@ -326,18 +327,18 @@
 </div>
 
 <div id="page-anim" class="panel" style="display:none">
-  <div style="font-size:12px;color:var(--dim);margin-bottom:12px">基于已有角色锚点批量生成动作变体（每动作一个 run，自动挂锚点参考图 + dHash 一致性检查）。特效帧暂走「动作」选单，专用字典后续按需扩展。</div>
+  <div style="font-size:12px;color:var(--dim);margin-bottom:12px">基于角色/怪物立绘锚点批量生成动作变体：形象与锚点完全一致、仅动作不同，纯色底自动抠透明（可直接进引擎当 sprite）。每动作一个 run，自动挂锚点参考图 + dHash 一致性检查。</div>
 
   <div class="row">
-    <div><label>角色名（须已有锚点）</label><input type="text" id="pose-char" placeholder="例：alice"></div>
+    <div><label>角色/怪物名（须已有锚点）</label><input type="text" id="pose-char" placeholder="例：alice 或 ember_toad"></div>
     <div><label>每动作候选数</label><select id="pose-count">
       <option>2</option><option selected>4</option><option>6</option><option>8</option>
     </select></div>
   </div>
-  <div><label>角色描述（可选）</label><input type="text" id="pose-desc" placeholder="例：红发精灵弓箭手"></div>
-  <!-- 风格参考（动作变体同样可挂：角色锚管形象+风格锚管画风） -->
+  <div><label>形象描述（可选）</label><input type="text" id="pose-desc" placeholder="例：红发精灵弓箭手"></div>
+  <!-- 风格参考（动作变体同样可挂：形象锚管形象+风格锚管画风） -->
   <div id="anim-style-ref-zone" style="margin-top:10px">
-    <label>风格参考（可选：锁画风，最多 3 张。自动与角色锚合并——角色锚管形象，风格锚管画风）</label>
+    <label>风格参考（可选：锁画风，最多 3 张。自动与形象锚合并——形象锚管形象，风格锚管画风）</label>
     <div id="anim-style-ref-list" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
     <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
       <button onclick="toggleAnchorPanel('anim-style-ref-zone')">建立图片画风锚点…</button>
@@ -349,14 +350,45 @@
   <div class="desc" id="pose-desc-box" style="margin-top:8px"></div>
   <button class="go" onclick="submitPoses()">提交动作批量任务</button>
 
-  <!-- 锚点状态条：当前角色形象基准（拍板候选晋升而来） -->
+  <!-- 锚点状态条：当前形象基准（拍板候选晋升而来） -->
   <div id="anchor-zone" style="display:none;margin-top:22px;border-top:1px dashed var(--line);padding-top:14px">
     <div style="font-weight:500;margin-bottom:6px">锚点状态</div>
     <div id="anchor-info" style="font-size:13px"></div>
     <div style="display:flex;gap:8px;margin-top:8px">
-      <input type="text" id="anchor-lookup" placeholder="输入角色名查锚点（例：alice）" style="max-width:280px">
+      <input type="text" id="anchor-lookup" placeholder="输入角色/怪物名查锚点（例：alice）" style="max-width:280px">
       <button onclick="lookupAnchor()">查锚点</button>
     </div>
+  </div>
+</div>
+
+<!-- 特效生成（固定模板：元素系 × 特效形态；纯色底自动抠透明） -->
+<div id="page-vfx" class="panel" style="display:none">
+  <div style="font-size:12px;color:var(--dim);margin-bottom:12px">固定模板产出无背景特效 sprite：选元素系（定色彩）× 特效形态（定构图语言），纯色底自动抠透明，可直接进引擎叠加。</div>
+
+  <div class="row">
+    <div><label>特效名</label><input type="text" id="vfx-name" placeholder="例：fire_nova" oninput="previewVfxName()"></div>
+    <div style="max-width:180px"><label>后缀</label><select id="vfx-asuffix" onchange="previewVfxName()"></select><div class="desc" id="desc-vfx-asuffix"></div></div>
+  </div>
+  <div style="font-size:12px;color:var(--ok);margin:4px 0 8px;min-height:1em" id="vfxname-preview"></div>
+  <div class="row">
+    <div><label>元素系</label><select id="vfx-element" onchange="showVfxElementDesc()"></select><div class="desc" id="desc-vfx-element"></div></div>
+    <div><label>特效形态</label><select id="vfx-form" onchange="showVfxFormDesc()"></select><div class="desc" id="desc-vfx-form"></div></div>
+  </div>
+  <div class="row">
+    <div><label>尺寸</label><select id="vfx-size"></select></div>
+    <div><label>数量 <span style="font-size:11px;color:var(--dim)">每 1 张图成本≈0.26 元</span></label><select id="vfx-count"></select></div>
+  </div>
+  <!-- 特效风格锚（元素色一致性：同系特效保持同一套色彩/质感） -->
+  <div id="vfx-style-ref-zone" style="margin-top:10px">
+    <label>风格参考（可选：锁元素色与质感，最多 3 张）</label>
+    <div id="vfx-style-ref-list" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+      <button onclick="toggleAnchorPanel('vfx-style-ref-zone')">建立特效风格锚点…</button>
+      <span id="vfx-anchor-cap" style="font-size:11px;color:var(--dim)"></span>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
+    <button class="go" onclick="submitVfxJob()">提交特效生成任务</button>
   </div>
 </div>
 
@@ -513,7 +545,7 @@ function H() { return { ...actorHeaders(), ...tok() }; }
 
 // ---- 页面切换 ----
 function currentPage() {
-  const on = document.querySelector('#nav-new,#nav-pose,#nav-monster,#nav-anim,#nav-jobs,#nav-feed,#nav-prop,#nav-review');
+  const on = document.querySelector('#nav-new,#nav-pose,#nav-monster,#nav-anim,#nav-vfx,#nav-jobs,#nav-feed,#nav-prop,#nav-review');
   return on ? on.classList.contains('on') ? on.id.replace('nav-', '') : 'new' : 'new';
 }
 // 评审 iframe 高度自适应：占满剩余视口，评审区内部滚动、外层不再滚动（与页面其余部分隔开）
@@ -526,7 +558,7 @@ function fitReviewFrame() {
 }
 window.addEventListener('resize', fitReviewFrame);
 function show(p) {
-  for (const x of ['new', 'pose', 'monster', 'anim', 'jobs', 'feed', 'prop', 'review']) {
+  for (const x of ['new', 'pose', 'monster', 'anim', 'vfx', 'jobs', 'feed', 'prop', 'review']) {
     const pg = document.getElementById('page-' + x);
     if (pg) pg.style.display = x === p ? '' : 'none';
     document.getElementById('nav-' + x).classList.toggle('on', x === p);
@@ -544,6 +576,7 @@ function show(p) {
   if (p === 'pose') loadCharDict();
   if (p === 'monster') loadMonDict();
   if (p === 'anim') { loadPoseDict(); loadStyleAnchors(); }
+  if (p === 'vfx') { loadVfxDict(); loadStyleAnchors(); }
   if (p === 'review') fitReviewFrame();   // 切入评审页时按当前视口自适应高度
 }
 
@@ -1407,6 +1440,8 @@ const STYLE_REF_PAGES = {
   ms:   { listId: null,               storeKey: 'monster_style_ref',  zoneId: 'mon-slot-monster_style_ref', max: 1, slot: true },
   mp:   { listId: null,               storeKey: 'monster_pose_ref',   zoneId: 'mon-slot-monster_pose_ref',  max: 1, slot: true },
   anim: { listId: 'anim-style-ref-list', storeKey: 'anim',        capId: 'anim-anchor-cap', zoneId: 'anim-style-ref-zone', max: 3 },
+  // 特效页风格锚（2026-08-28）：元素色/质感一致性基准，独立库
+  vfx:  { listId: 'vfx-style-ref-list',  storeKey: 'vfx',         capId: 'vfx-anchor-cap',  zoneId: 'vfx-style-ref-zone',  max: 3 },
 };
 function loadStyleRefState() {
   let saved = {};
@@ -1940,6 +1975,76 @@ async function submitPoses() {
     return;
   }
   toast(`已入队：${char} × ${body.poses.join(',')}（每动作${body.count_each}张）`, 'ok');
+  show('jobs');
+}
+
+// ---- 特效页（固定模板：元素系 × 特效形态 → 无背景 sprite） ----
+async function loadVfxDict() {
+  if (!DICT) DICT = await fetchDict();
+  // 元素系 / 形态 / 后缀 / 尺寸 / 数量
+  DICT_STORE['vfx-asuffix'] = DICT.asset_suffixes || {};
+  fill('vfx-asuffix', DICT_STORE['vfx-asuffix'], 'label');
+  document.getElementById('vfx-asuffix').value = 'fx';
+  const els = DICT.vfx_elements || {};
+  fill('vfx-element', els, 'label');
+  document.getElementById('vfx-element').value = 'fire';
+  const fms = DICT.vfx_forms || {};
+  fill('vfx-form', fms, 'label');
+  document.getElementById('vfx-form').value = 'explosion';
+  const sz = document.getElementById('vfx-size');
+  sz.innerHTML = '';
+  for (const [k, v] of Object.entries(DICT.sizes || {}))
+    if (k === k.split('x').map(Number).map(String).join('x') && k.split('x')[0] === k.split('x')[1])
+      sz.insertAdjacentHTML('beforeend', `<option value="${k}">${v.label || k}</option>`);
+  if (!sz.options.length) {   // 字典无正方形时兜底首项
+    for (const [k, v] of Object.entries(DICT.sizes || {}))
+      sz.insertAdjacentHTML('beforeend', `<option value="${k}">${v.label || k}</option>`);
+  }
+  sz.value = '2688x2688';
+  const cnt = document.getElementById('vfx-count');
+  cnt.innerHTML = '';
+  for (const n of [1, 2, 4, 6, 8]) cnt.insertAdjacentHTML('beforeend', `<option ${n===DICT.defaults.count?'selected':''}>${n}</option>`);
+  showVfxElementDesc(); showVfxFormDesc(); previewVfxName();
+}
+function showVfxElementDesc() {
+  const d = (DICT.vfx_elements || {})[document.getElementById('vfx-element').value] || {};
+  const box = document.getElementById('desc-vfx-element');
+  if (d.desc) { box.textContent = d.desc; box.classList.add('show'); }
+  else box.classList.remove('show');
+}
+function showVfxFormDesc() {
+  const d = (DICT.vfx_forms || {})[document.getElementById('vfx-form').value] || {};
+  const box = document.getElementById('desc-vfx-form');
+  if (d.desc) { box.textContent = d.desc; box.classList.add('show'); }
+  else box.classList.remove('show');
+}
+function previewVfxName() {
+  _previewNameGeneric('vfx-name', 'vfx-asuffix', 'vfxname-preview', 'desc-vfx-asuffix', 'vfx-asuffix');
+}
+async function submitVfxJob() {
+  const name = document.getElementById('vfx-name').value.trim();
+  if (!name) { toast('特效名必填', 'bad'); return; }
+  const body = {
+    asset_name: name,
+    asset_suffix_key: document.getElementById('vfx-asuffix').value || 'fx',
+    vfx_element: document.getElementById('vfx-element').value,
+    vfx_form: document.getElementById('vfx-form').value,
+    size: document.getElementById('vfx-size').value,
+    count: parseInt(document.getElementById('vfx-count').value),
+    style_refs: selectedRefs('vfx'),
+  };
+  const ov = providerOverride();
+  if (ov && ov.api_key) body.provider_override = ov;
+  const r = await fetch('api/vfx', {
+    method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+    body: JSON.stringify(body),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (r.status !== 200) {
+    toast('提交失败：' + (d.detail || JSON.stringify(d)), 'bad');
+    return;
+  }
+  toast(`已入队：${name}（${(DICT.vfx_elements||{})[body.vfx_element].label}·${(DICT.vfx_forms||{})[body.vfx_form].label}）`, 'ok');
   show('jobs');
 }
 

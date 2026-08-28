@@ -54,7 +54,8 @@ def execute_run(spec: dict, refs=None, actor: dict = None,
     run_id = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     subject = spec.get("subject", "unnamed")
     out_dir = cfg.root / "exports" / subject / run_id
-    post_meta = process_run(raw_urls, out_dir)
+    post_meta = process_run(raw_urls, out_dir,
+                            asset_type=spec.get("asset_type", ""))
 
     manifest = {
         "schema": 1,
