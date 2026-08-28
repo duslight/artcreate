@@ -210,10 +210,6 @@
     <button class="go" id="submit-new-btn" onclick="submitJob()">提交生成任务</button>
     <button class="go" onclick="toggleHistoryPanel('new')">从历史载入迭代…</button>
   </div>
-  <div id="history-panel" style="display:none;margin-top:10px;border:1px solid var(--line);border-radius:6px;padding:10px">
-    <div style="font-size:12px;color:var(--dim);margin-bottom:8px">点选一个历史 run 载入（最近 30 条，模块=产出该 run 的页面）</div>
-    <div id="history-list" style="max-height:260px;overflow-y:auto">加载中…</div>
-  </div>
 </div>
 
 <div id="page-pose" class="panel" style="display:none">
@@ -503,6 +499,13 @@
   <div id="live-grid"></div>
 </div>
 
+<!-- 历史载入面板（全局单例：不嵌在任何 page 容器里——否则切页即被 display:none
+     连带隐藏；按 ownerPage 隔离显示，与 review-card/live-zone 同机制） -->
+<div id="history-panel" class="panel" style="display:none;margin-top:14px">
+  <div style="font-size:12px;color:var(--dim);margin-bottom:8px">点选一个历史 run 载入（最近 30 条，模块=产出该 run 的页面）</div>
+  <div id="history-list" style="max-height:260px;overflow-y:auto">加载中…</div>
+</div>
+
 
 <div id="page-lineage" style="display:none"></div>
 
@@ -580,8 +583,8 @@ function show(p) {
     if (pg) pg.style.display = x === p ? '' : 'none';
     document.getElementById('nav-' + x).classList.toggle('on', x === p);
   }
-  // 共享区块按属主隔离：审核卡/出图区记录打开时所在页，切走隐藏、切回恢复
-  for (const id of ['review-card', 'live-zone']) {
+  // 共享区块按属主隔离：审核卡/出图区/历史面板记录打开时所在页，切走隐藏、切回恢复
+  for (const id of ['review-card', 'live-zone', 'history-panel']) {
     const el = document.getElementById(id);
     if (!el) continue;
     if (el.dataset.ownerPage)   // 有属主才管（未打开/关闭态不动）
@@ -1364,8 +1367,9 @@ const PAGE_LABELS = { new: '场景', pose: '角色', monster: '怪物', anim: '�
 function toggleHistoryPanel(page) {
   const p = document.getElementById('history-panel');
   const open = p.style.display === 'none';
-  p.style.display = open ? '' : 'none';
   if (open) { HIST_PAGE = page || currentPage() || 'new'; loadHistoryList(); }
+  p.dataset.ownerPage = open ? (HIST_PAGE) : '';
+  p.style.display = open ? '' : 'none';   // 全局单例：显式控制（不嵌页容器）
 }
 async function loadHistoryList() {
   HIST_RUNS = await (await fetch('api/runs', {headers: H()})).json();
