@@ -539,6 +539,30 @@ function toast(msg, kind) {   // kind: 'ok' | 'bad' | 'info'（默认）
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => { box.style.opacity = '0'; }, 3500);
 }
+// ---- 全局 loading 遮罩（耗时操作防"未响应"误解 + 物理阻断重复点击）----
+function showLoading(text) {
+  let mask = document.getElementById('loading-mask');
+  if (!mask) {
+    mask = document.createElement('div');
+    mask.id = 'loading-mask';
+    mask.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(10,11,12,.55);'
+      + 'display:flex;align-items:center;justify-content:center';
+    mask.innerHTML = `<div style="background:#1e2023;border:1px solid rgba(79,156,249,.5);border-radius:10px;
+        padding:18px 26px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px rgba(0,0,0,.5)">
+      <span style="width:16px;height:16px;border:2px solid #4f9cf9;border-top-color:transparent;border-radius:50%;
+        display:inline-block;animation:acspin .8s linear infinite"></span>
+      <span id="loading-text" style="font-size:14px;color:#d8dad9"></span>
+    </div>
+    <style>@keyframes acspin{to{transform:rotate(360deg)}}</style>`;
+    document.body.appendChild(mask);
+  }
+  document.getElementById('loading-text').textContent = text || '处理中…';
+  mask.style.display = 'flex';
+}
+function hideLoading() {
+  const mask = document.getElementById('loading-mask');
+  if (mask) mask.style.display = 'none';
+}
 function meId() {
   let v = localStorage.getItem('ac-uuid');
   if (!v) {
@@ -1311,7 +1335,14 @@ async function liveAct(kind, idx, btn) {
 async function refineThisRun(runId, btn) {
   if (btn) btn.disabled = true;
   // 候选卡精修入口：fillFromRun 内部已"载入即直达"（跳过重编译直达审核卡+精修）
-  await fillFromRun(runId);
+  showLoading('正在从历史载入迭代（补译编译词），约 10 秒…');
+  try {
+    await fillFromRun(runId);
+  } catch (e) {
+    toast('载入失败：' + e, 'bad');
+  } finally {
+    hideLoading();
+  }
 }
 async function liveMakeAnchor(idx, runId, btn) {
   // 设为锚点（工作台候选卡）：晋升角色形象基准，后续动作批量/变体以它为参考图
@@ -1389,10 +1420,18 @@ async function pickHistory(i) {
   const r = HIST_RUNS[i];
   if (!r) return;
   toggleHistoryPanel();
-  const page = r.page || 'new';
-  if (page !== currentPage()) show(page);   // 路由：载入哪个模块的 run 就跳哪页
-  await fillFromRun(r.run_id, r);
-  toast(`已载入 ${PAGE_LABELS[page] || ''}·${r.subject}（rev${r.revision}）· 历史编译词已直达精修`, 'ok');
+  // 载入约 5-10s（拉 spec + 字典 + 补译历史编译词）：遮罩提示 + 阻断重复点击
+  showLoading(`正在从历史载入迭代（${PAGE_LABELS[r.page] || '场景'}·${r.subject}），约 10 秒…`);
+  try {
+    const page = r.page || 'new';
+    if (page !== currentPage()) show(page);   // 路由：载入哪个模块的 run 就跳哪页
+    await fillFromRun(r.run_id, r);
+    toast(`已载入 ${PAGE_LABELS[page] || ''}·${r.subject}（rev${r.revision}）· 历史编译词已直达精修`, 'ok');
+  } catch (e) {
+    toast('载入失败：' + e, 'bad');
+  } finally {
+    hideLoading();
+  }
 }
 async function fillFromRun(runId, meta) {
   const full = await (await fetch(`api/spec/${runId}`, {headers: H()})).json();
@@ -2339,7 +2378,10 @@ function goReview(runId) {
 window.addEventListener('message', (ev) => {
   if (ev.data && ev.data.type === 'ac-iterate' && ev.data.runId) {
     show('new');
-    fillFromRun(ev.data.runId);
+    showLoading('正在从历史载入迭代（补译编译词），约 10 秒…');
+    fillFromRun(ev.data.runId)
+      .catch(e => toast('载入失败：' + e, 'bad'))
+      .finally(hideLoading);
   }
 });
 
@@ -2391,7 +2433,11 @@ loadDict().then(() => {
   const goto = localStorage.getItem('ac-goto-iterate');
   if (goto) {
     localStorage.removeItem('ac-goto-iterate');
-    loadStyleAnchors().then(() => fillFromRun(goto));   // 风格锚库先就位（回填参考图需要）
+    showLoading('正在从历史载入迭代（补译编译词），约 10 秒…');   // 页面冷启动即载入：同样给遮罩
+    loadStyleAnchors()
+      .then(() => fillFromRun(goto))
+      .catch(e => toast('载入失败：' + e, 'bad'))
+      .finally(hideLoading);   // 风格锚库先就位（回填参考图需要）
   } else {
     loadStyleAnchors();
   }
