@@ -480,39 +480,61 @@ def api_consistency(run_id: str, request: Request, x_token: str = Header(None)):
             "reports": character.check_run_consistency(row["subject"], run_id)}
 
 
+@router.post("/api/characters/{name}/pose-preview")
+def api_pose_preview(name: str, request: Request, body: dict,
+                     x_token: str = Header(None)):
+    """动作页编译前置（单动作模式）：构造并返回单个 pose spec（不入队）。
+    前端拿 spec → /api/compile-preview → 审核卡 → 确认后 POST /api/jobs。"""
+    _check_token(request, x_token)
+    from . import character
+    poses, style_refs, override = _pose_body_checked(body)
+    # 复用批量构造取首项：锚点校验 + inject 注入 + 参考图合并同链路
+    items = character.pose_batch_spec(name, poses,
+                                      description=body.get("description", ""),
+                                      count_each=body.get("count_each", 1),
+                                      style_refs=style_refs)
+    spec = items[0]["spec"]
+    if override:
+        spec["provider_override"] = override
+    return {"spec": spec}
+
+
+def _pose_body_checked(body: dict) -> tuple:
+    """动作页提交体公共校验：返回 (poses, style_refs, override)。"""
+    poses = body.get("poses", [])
+    if not poses or not isinstance(poses, list):
+        raise HTTPException(422, "poses 必填且为数组")
+    if len(poses) > 8:
+        raise HTTPException(422, "单批动作不超过 8 个（防误烧钱）")
+    if body.get("count_each", 4) > 8:
+        raise HTTPException(422, "候选数不超过 8 张（防误烧钱）")
+    pose_dict = cfg.character_poses
+    bad = [p for p in poses if p not in pose_dict]
+    if bad:
+        raise HTTPException(422, f"未知动作：{bad}（现有：{sorted(pose_dict)}）")
+    style_refs = body.get("style_refs") or []
+    if len(style_refs) > 3:
+        raise HTTPException(422, "风格参考最多 3 张")
+    override = body.get("provider_override") or None
+    if override and not override.get("api_key"):
+        raise HTTPException(422, "自定义 API 缺少 api_key")
+    return poses, style_refs, override
+
+
 @router.post("/api/characters/{name}/pose-batch")
 def api_pose_batch(name: str, request: Request, body: dict,
                    x_token: str = Header(None),
                    x_actor_id: str = Header(None),
                    x_actor_name: str = Header(None)):
-    """7-B 动作批量：body={poses:["idle","attack"], count_each?:4, description?}。
-    前置：角色须有锚点。数量守卫：poses≤8、count_each≤8 防误烧钱。"""
+    """7-B 动作批量（兼容保留；工作台已改单动作走 preview + jobs）：
+    body={poses:["idle","attack"], count_each?:4, description?}。"""
     _check_token(request, x_token)
     from . import character, jobs as jobs_mod
-    poses = body.get("poses", [])
+    poses, style_refs, override = _pose_body_checked(body)
     count_each = body.get("count_each", 4)
-    # ---- 守卫 ----
-    if not poses or not isinstance(poses, list):
-        raise HTTPException(422, "poses 必填且为数组")
-    if len(poses) > 8:
-        raise HTTPException(422, "单批动作不超过 8 个（防误烧钱）")
-    if count_each > 8:
-        raise HTTPException(422, "每动作候选不超过 8 张（防误烧钱）")
-    pose_dict = cfg.character_poses
-    bad = [p for p in poses if p not in pose_dict]
-    if bad:
-        raise HTTPException(422, f"未知动作：{bad}（现有：{sorted(pose_dict)}）")
     # ---- 锚点前置校验 ----
     if not character.get_anchor(name):
         raise HTTPException(404, f"角色 {name} 尚无锚点，先 set_anchor 再批量生成")
-    # ---- 风格锚参考（画风固化：与角色锚合并挂参考图，上限守卫） ----
-    style_refs = body.get("style_refs") or []
-    if len(style_refs) > 3:
-        raise HTTPException(422, "风格参考最多 3 张")
-    # ---- 自定义生图 API（worker 执行前剥离，不落库） ----
-    override = body.get("provider_override") or None
-    if override and not override.get("api_key"):
-        raise HTTPException(422, "自定义 API 缺少 api_key")
     # ---- 入队 ----
     spec = {"pose_batch": {
         "character": name,
@@ -528,15 +550,8 @@ def api_pose_batch(name: str, request: Request, body: dict,
 
 
 # ---------- 特效生成（固定模板：元素系 × 形态 → 无背景 sprite） ----------
-@router.post("/api/vfx")
-def api_vfx(request: Request, body: dict,
-            x_token: str = Header(None),
-            x_actor_id: str = Header(None), x_actor_name: str = Header(None)):
-    """特效页提交：body={asset_name, vfx_element, vfx_form, size?, count?,
-    asset_suffix_key?, style_refs?, provider_override?}。
-    元素×形态从字典取注入词，走 vfx_sprite 资产类型（纯色底自动抠透明）。"""
-    _check_token(request, x_token)
-    from . import jobs as jobs_mod
+def _vfx_body_checked(body: dict) -> tuple:
+    """特效页提交体公共校验：返回 (name, el, fm, count, style_refs, override)。"""
     name = (body.get("asset_name") or "").strip()
     if not name:
         raise HTTPException(422, "特效名必填")
@@ -557,8 +572,15 @@ def api_vfx(request: Request, body: dict,
     override = body.get("provider_override") or None
     if override and not override.get("api_key"):
         raise HTTPException(422, "自定义 API 缺少 api_key")
+    return name, el, fm, count, style_refs, override
 
-    # 元素色 + 形态语言 → 自由约束（编译进正向区）
+
+def build_vfx_spec(body: dict) -> dict:
+    """特效页 spec 构造（/api/vfx 与 /api/vfx/preview 共用）：
+    元素色 + 形态语言 → 自由约束（编译进正向区）。"""
+    name, el, fm, count, style_refs, override = _vfx_body_checked(body)
+    elements = cfg.vfx_elements
+    forms = cfg.vfx_forms
     free = ", ".join(x for x in [
         forms[fm].get("inject"),
         f"color scheme: {elements[el].get('colors')}",
@@ -577,6 +599,29 @@ def api_vfx(request: Request, body: dict,
         "ref_images": style_refs,
         "vfx": {"element": el, "form": fm},
     }
+    if override:
+        spec["provider_override"] = override
+    return spec
+
+
+@router.post("/api/vfx/preview")
+def api_vfx_preview(request: Request, body: dict, x_token: str = Header(None)):
+    """特效页编译前置：只构造并返回 spec（不入队）。
+    前端拿 spec → /api/compile-preview → 审核卡 → 确认后 POST /api/jobs。"""
+    _check_token(request, x_token)
+    return {"spec": build_vfx_spec(body)}
+
+
+@router.post("/api/vfx")
+def api_vfx(request: Request, body: dict,
+            x_token: str = Header(None),
+            x_actor_id: str = Header(None), x_actor_name: str = Header(None)):
+    """特效页直接入队（兼容保留；工作台主链路已改走 preview + 通用 jobs）。"""
+    _check_token(request, x_token)
+    from . import jobs as jobs_mod
+    spec = build_vfx_spec(body)
+    el, fm = spec["vfx"]["element"], spec["vfx"]["form"]
+    count = spec["count"]
     jobs_mod.init_jobs()
     job_id = jobs_mod.submit_job(spec, _actor(x_actor_id, x_actor_name))
     return {"job_id": job_id, "element": el, "form": fm, "count": count}

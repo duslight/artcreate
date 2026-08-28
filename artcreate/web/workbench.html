@@ -207,10 +207,10 @@
   </div>
   <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
     <button class="go" id="submit-new-btn" onclick="submitJob()">提交生成任务</button>
-    <button onclick="toggleHistoryPanel()">从历史载入迭代…</button>
+    <button class="go" onclick="toggleHistoryPanel('new')">从历史载入迭代…</button>
   </div>
   <div id="history-panel" style="display:none;margin-top:10px;border:1px solid var(--line);border-radius:6px;padding:10px">
-    <div style="font-size:12px;color:var(--dim);margin-bottom:8px">点选一个历史 run 载入（最近 30 条）</div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:8px">点选一个历史 run 载入（最近 30 条，模块=产出该 run 的页面）</div>
     <div id="history-list" style="max-height:260px;overflow-y:auto">加载中…</div>
   </div>
 </div>
@@ -267,6 +267,7 @@
   </div>
   <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
     <button class="go" id="submit-char-btn" onclick="submitCharJob()">提交立绘生成任务</button>
+    <button class="go" onclick="toggleHistoryPanel('pose')">从历史载入迭代…</button>
     <span style="font-size:11px;color:var(--dim)">提交后进入编译审核 → 确认生成 → 候选拍板 → 「设为锚点」</span>
   </div>
 </div>
@@ -322,20 +323,22 @@
   </div>
   <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
     <button class="go" id="submit-mon-btn" onclick="submitMonJob()">提交怪物生成任务</button>
+    <button class="go" onclick="toggleHistoryPanel('monster')">从历史载入迭代…</button>
     <span style="font-size:11px;color:var(--dim)">提交后进入编译审核 → 确认生成 → 候选拍板 → 「设为锚点」</span>
   </div>
 </div>
 
 <div id="page-anim" class="panel" style="display:none">
-  <div style="font-size:12px;color:var(--dim);margin-bottom:12px">基于角色/怪物立绘锚点批量生成动作变体：形象与锚点完全一致、仅动作不同，纯色底自动抠透明（可直接进引擎当 sprite）。每动作一个 run，自动挂锚点参考图 + dHash 一致性检查。</div>
+  <div style="font-size:12px;color:var(--dim);margin-bottom:12px">基于角色/怪物立绘锚点生成动作变体：形象与锚点完全一致、仅动作不同，透明底图</div>
 
   <div class="row">
-    <div><label>角色/怪物名（须已有锚点）</label><input type="text" id="pose-char" placeholder="例：alice 或 ember_toad"></div>
-    <div><label>每动作候选数</label><select id="pose-count">
-      <option>2</option><option selected>4</option><option>6</option><option>8</option>
-    </select></div>
+    <div><label>角色/怪物名</label><input type="text" id="pose-char" placeholder="例：alice 或 ember_toad（须已有锚点）"></div>
+    <div><label>数量</label><select id="pose-count"></select></div>
   </div>
-  <div><label>形象描述（可选）</label><input type="text" id="pose-desc" placeholder="例：红发精灵弓箭手"></div>
+  <div><label>动作补充描述（可选）</label><input type="text" id="pose-desc" placeholder="例：挥剑劈砍，斗篷飞扬"></div>
+  <label>动作选择</label>
+  <div id="pose-list"></div>
+  <div class="desc" id="pose-desc-box" style="margin-top:8px"></div>
   <!-- 风格参考（动作变体同样可挂：形象锚管形象+风格锚管画风） -->
   <div id="anim-style-ref-zone" style="margin-top:10px">
     <label>风格参考（可选：锁画风，最多 3 张。自动与形象锚合并——形象锚管形象，风格锚管画风）</label>
@@ -345,10 +348,10 @@
       <span id="anim-anchor-cap" style="font-size:11px;color:var(--dim)"></span>
     </div>
   </div>
-  <label>动作选择</label>
-  <div id="pose-list"></div>
-  <div class="desc" id="pose-desc-box" style="margin-top:8px"></div>
-  <button class="go" onclick="submitPoses()">提交动作批量任务</button>
+  <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
+    <button class="go" id="submit-anim-btn" onclick="submitAnimJob()">提交动作生成任务</button>
+    <button class="go" onclick="toggleHistoryPanel('anim')">从历史载入迭代…</button>
+  </div>
 
   <!-- 锚点状态条：当前形象基准（拍板候选晋升而来） -->
   <div id="anchor-zone" style="display:none;margin-top:22px;border-top:1px dashed var(--line);padding-top:14px">
@@ -388,7 +391,8 @@
     </div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
-    <button class="go" onclick="submitVfxJob()">提交特效生成任务</button>
+    <button class="go" id="submit-vfx-btn" onclick="submitVfxJob()">提交特效生成任务</button>
+    <button class="go" onclick="toggleHistoryPanel('vfx')">从历史载入迭代…</button>
   </div>
 </div>
 
@@ -807,8 +811,11 @@ function collectSpec() {
 async function submitJob() {
   const spec = collectSpec();
   if (!spec) return;
+  await _submitSpecLoaded(spec);
+}
+async function _submitSpecLoaded(spec) {
   // 历史载入且带编译词：跳过重编译（LLM 有随机性，历史词才是所见即所得），
-  // 直达审核卡 + 按需补译中文底稿 → 精修
+  // 直达审核卡 + 按需补译中文底稿 → 精修（通用：五页共用）
   if (loadedCompile && loadedCompile.prompt) {
     pendingSpec = spec;
     pendingSpec.compiled_prompt = loadedCompile.prompt;
@@ -852,8 +859,14 @@ async function submitJob() {
     toast('已载入历史编译词，直接改中文即可（确认生成按此直送）', 'ok');
     return;
   }
-  // 位置A：先同步编译 → 审核卡（中英对照+lint）→ 确认才入队
-  const btn = document.getElementById('submit-new-btn');
+  // 位置A：先同步编译 → 审核卡（中英对照+lint）→ 确认才入队（通用：五页共用）
+  const BTN_BY_PAGE = { new: ['submit-new-btn', '提交生成任务'],
+                        pose: ['submit-char-btn', '提交立绘生成任务'],
+                        monster: ['submit-mon-btn', '提交怪物生成任务'],
+                        anim: ['submit-anim-btn', '提交动作生成任务'],
+                        vfx: ['submit-vfx-btn', '提交特效生成任务'] };
+  const [btnId, btnText] = BTN_BY_PAGE[currentPage()] || BTN_BY_PAGE.new;
+  const btn = document.getElementById(btnId);
   btn.textContent = '编译中…';
   btn.disabled = true;
   try {
@@ -873,7 +886,7 @@ async function submitJob() {
   } catch (e) {
     toast('编译预览失败：' + e, 'bad');
   } finally {
-    btn.textContent = '提交生成任务';
+    btn.textContent = btnText;
     btn.disabled = false;
   }
 }
@@ -912,6 +925,9 @@ function renderReviewCard(d) {
   const card = document.getElementById('review-card');
   card.dataset.ownerPage = currentPage();   // 记录属主页：切页隔离显示
   card.style.display = '';
+  // 精修底稿防残留：pendingSpec 已换新（跨页提交/历史载入），若精修区开着
+  // 必须按新 spec 重建底稿——否则改的是上一页的旧中文，同步翻译错位
+  if (refineOn) { buildRefineSegs(); buildRefineFull(); setRefineMode(refineMode); }
   // 滚到卡片底部：审核操作按钮（确认生成/回去修改）在卡尾，落点在视口下方
   card.scrollIntoView({behavior: 'smooth', block: 'end'});
 }
@@ -1316,11 +1332,23 @@ function zoomLive(src) { window.open(src, '_blank'); }
 
 // ---- 从历史载入（迭代入口：可点选列表）----
 let HIST_RUNS = null;
-function toggleHistoryPanel() {
+let HIST_PAGE = 'new';   // 面板从哪个页打开（载入后跳回该页表单）
+// run spec → 产出页面推断（历史列表徽标 + 载入路由）
+function pageOfSpec(spec) {
+  const at = spec.asset_type || '';
+  if (spec.vfx) return 'vfx';
+  if (at.startsWith('vfx_')) return 'vfx';
+  if (spec.character && spec.character.pose) return 'anim';
+  if (at.startsWith('monster_')) return 'monster';
+  if (at.startsWith('character_')) return 'pose';
+  return 'new';
+}
+const PAGE_LABELS = { new: '场景', pose: '角色', monster: '怪物', anim: '角色动作', vfx: '特效' };
+function toggleHistoryPanel(page) {
   const p = document.getElementById('history-panel');
   const open = p.style.display === 'none';
   p.style.display = open ? '' : 'none';
-  if (open) loadHistoryList();
+  if (open) { HIST_PAGE = page || currentPage() || 'new'; loadHistoryList(); }
 }
 async function loadHistoryList() {
   HIST_RUNS = await (await fetch('api/runs', {headers: H()})).json();
@@ -1330,6 +1358,7 @@ async function loadHistoryList() {
       padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px"
       onmouseover="this.style.background='#22252a'" onmouseout="this.style.background=''">
       <b>${r.subject}</b>
+      <span style="font-size:11px;color:var(--acc);border:1px solid var(--acc);border-radius:4px;padding:0 5px;white-space:nowrap">${r.page_label || '场景'}</span>
       <span class="meta">rev${r.revision}${r.pose ? ' · 动作:' + r.pose : ''} · ${r.created_at}</span>
       <span style="flex:1"></span>
       <code style="font-size:11px;color:var(--dim)">${r.run_id.slice(-6)}</code>
@@ -1339,33 +1368,29 @@ async function pickHistory(i) {
   const r = HIST_RUNS[i];
   if (!r) return;
   toggleHistoryPanel();
+  const page = r.page || 'new';
+  if (page !== currentPage()) show(page);   // 路由：载入哪个模块的 run 就跳哪页
   await fillFromRun(r.run_id, r);
-  toast(`已载入 ${r.subject}（rev${r.revision}）· 历史编译词已直达精修`, 'ok');
+  toast(`已载入 ${PAGE_LABELS[page] || ''}·${r.subject}（rev${r.revision}）· 历史编译词已直达精修`, 'ok');
 }
 async function fillFromRun(runId, meta) {
   const full = await (await fetch(`api/spec/${runId}`, {headers: H()})).json();
   const spec = full.spec || {};
-  document.getElementById('f-aname').value = spec.asset_name || spec.subject || '';
-  document.getElementById('f-asuffix').value = spec.asset_suffix_key || 'none';
-  document.getElementById('f-desc').value = spec.description || '';
-  if (spec.asset_type) document.getElementById('f-atype').value = spec.asset_type;
-  if (spec.art_style) document.getElementById('f-style').value = spec.art_style;
-  if (spec.mood) document.getElementById('f-mood').value = spec.mood;
-  if (spec.size) document.getElementById('f-size').value = spec.size;
-  // 出图数量回填：下拉选项不存在时（如历史 spec 的 3/5）动态追加，避免静默回落 4
-  if (spec.count) {
-    const csel = document.getElementById('f-count');
-    if (![...csel.options].some(o => o.value === String(spec.count)))
-      csel.insertAdjacentHTML('beforeend', `<option>${spec.count}</option>`);
-    csel.value = spec.count;
-  }
-  document.getElementById('f-free').value = (spec.constraints || {}).free_text || '';
-  document.getElementById('f-fneg').value = (spec.constraints || {}).free_text_negative || '';
-  axisSel = {};
-  document.querySelectorAll('#f-axes .opt').forEach(el => el.classList.remove('on'));
-  for (const [ax, opt] of Object.entries((spec.constraints || {}).axis_sel || {})) {
-    const el = document.querySelector(`.opt[data-axis="${ax}"][data-opt="${opt}"]`);
-    if (el) { el.classList.add('on'); axisSel[ax] = opt; }
+  // 路由：按 spec 推断产出页面，跳过去再回填对应表单（避免角色 run 错填场景表单）
+  const page = pageOfSpec(spec);
+  if (page !== currentPage()) show(page);
+  // 目标页字典先就位（show 触发的 loadXxxDict 是异步，回填下拉依赖选项已在）
+  if (page === 'pose' && !DICT) DICT = await fetchDict();
+  if (page === 'anim' && !POSE_DICT) await loadPoseDict();
+  if (page === 'vfx') await loadVfxDict();
+  if (page === 'pose' || page === 'monster') {
+    _fillCharMonFromSpec(spec);   // 角色/怪物共用回填（字段同构）
+  } else if (page === 'anim') {
+    _fillAnimFromSpec(spec);
+  } else if (page === 'vfx') {
+    _fillVfxFromSpec(spec);
+  } else {
+    _fillSceneFromSpec(spec);
   }
   // 历史编译词携带：进精修模式的底稿（prompt=spec 直通词 / segments=分段 /
   // prompt_zh=存底直用（新 run 有），老 run 缺失时直达补译）
@@ -1377,20 +1402,105 @@ async function fillFromRun(runId, meta) {
   parentRun = runId;
   document.getElementById('form-extra').style.display = '';
   document.getElementById('form-parent-info').textContent =
-    `迭代自 run ${runId}（${meta ? meta.subject : spec.subject || ''}）——历史编译词已直达下方审核卡，可精修`;
+    `迭代自 run ${runId}（${PAGE_LABELS[page]}·${meta ? meta.subject : spec.subject || ''}）——历史编译词已直达下方审核卡，可精修`;
   // 风格参考回填：历史 spec 挂过的参考图按风格锚名重新选中（场景库内匹配，无则忽略）
-  styleRefSets.f.clear();
-  const sceneAnchors = STYLE_ANCHORS.scene || [];
+  const refPage = {new:'f', pose:'cs', monster:'ms', anim:'anim', vfx:'vfx'}[page] || 'f';
+  const refScope = {new:'scene', pose:'style_ref', monster:'monster_style_ref', anim:'anim', vfx:'vfx'}[page] || 'scene';
+  styleRefSets[refPage].clear();
+  const refAnchors = STYLE_ANCHORS[refScope] || [];
   for (const p of (spec.ref_images || [])) {
-    const hit = sceneAnchors.find(a => a.image_path === p);
-    if (hit) styleRefSets.f.add(hit.character);
+    const hit = refAnchors.find(a => a.image_path === p);
+    if (hit) styleRefSets[refPage].add(hit.character);
   }
-  saveStyleRefState('f');
-  renderStyleRefs('f');
-  ['f-atype','f-style','f-mood'].forEach(id => showDesc(document.getElementById(id)));
+  saveStyleRefState(refPage);
+  renderStyleRefs(refPage);
   previewName();
   // 载入即直达：跳过 LLM 重编译，直接以历史编译词开审核卡+精修（带编译词才有意义）
-  if (loadedCompile && loadedCompile.prompt) await submitJob();
+  // 按当前页选对应 collect（表单已回填该页）
+  if (loadedCompile && loadedCompile.prompt) {
+    const collectors = { new: collectSpec, pose: collectCharSpec,
+                         monster: collectMonSpec };
+    const collect = collectors[page] || collectSpec;
+    const spec2 = collect();
+    if (spec2) await _submitSpecLoaded(spec2);
+  }
+}
+function _setCount(id, n) {
+  // 数量回填：下拉选项不存在时动态追加，避免静默回落默认值
+  if (!n) return;
+  const csel = document.getElementById(id);
+  if (![...csel.options].some(o => o.value === String(n)))
+    csel.insertAdjacentHTML('beforeend', `<option>${n}</option>`);
+  csel.value = n;
+}
+function _fillAxes(selObj, axisAttr, sel) {
+  // 轴回填：清高亮 → 按 spec.axis_sel 恢复
+  const target = {};
+  document.querySelectorAll(`.opt[${axisAttr}]`).forEach(el => el.classList.remove('on'));
+  for (const [ax, opt] of Object.entries(sel || {})) {
+    const el = document.querySelector(`.opt[${axisAttr}="${ax}"][data-opt="${opt}"]`);
+    if (el) { el.classList.add('on'); target[ax] = opt; }
+  }
+  return target;
+}
+function _fillSceneFromSpec(spec) {
+  document.getElementById('f-aname').value = spec.asset_name || spec.subject || '';
+  document.getElementById('f-asuffix').value = spec.asset_suffix_key || 'none';
+  document.getElementById('f-desc').value = spec.description || '';
+  if (spec.asset_type) document.getElementById('f-atype').value = spec.asset_type;
+  if (spec.art_style) document.getElementById('f-style').value = spec.art_style;
+  if (spec.mood) document.getElementById('f-mood').value = spec.mood;
+  if (spec.size) document.getElementById('f-size').value = spec.size;
+  _setCount('f-count', spec.count);
+  document.getElementById('f-free').value = (spec.constraints || {}).free_text || '';
+  document.getElementById('f-fneg').value = (spec.constraints || {}).free_text_negative || '';
+  axisSel = _fillAxes(axisSel, 'data-axis', (spec.constraints || {}).axis_sel);
+  ['f-atype','f-style','f-mood'].forEach(id => showDesc(document.getElementById(id)));
+}
+function _fillCharMonFromSpec(spec) {
+  const isMon = pageOfSpec(spec) === 'monster';
+  const p = isMon ? 'm' : 'c';
+  document.getElementById(p + '-name').value = spec.asset_name || spec.subject || '';
+  document.getElementById(p + '-asuffix').value = spec.asset_suffix_key || 'none';
+  document.getElementById(p + '-desc').value = spec.description || '';
+  if (spec.asset_type) document.getElementById(p + '-atype').value = spec.asset_type;
+  if (spec.art_style) document.getElementById(p + '-style').value = spec.art_style;
+  if (spec.size) document.getElementById(p + '-size').value = spec.size;
+  _setCount(p + '-count', spec.count);
+  document.getElementById(p + '-free').value = (spec.constraints || {}).free_text || '';
+  document.getElementById(p + '-fneg').value = (spec.constraints || {}).free_text_negative || '';
+  if (isMon) monAxisSel = _fillAxes(monAxisSel, 'data-maxis', (spec.constraints || {}).axis_sel);
+  else charAxisSel = _fillAxes(charAxisSel, 'data-caxis', (spec.constraints || {}).axis_sel);
+  [p + '-atype', p + '-style'].forEach(id => showDesc(document.getElementById(id)));
+  _previewNameGeneric(p + '-name', p + '-asuffix', p + 'name-preview', 'desc-' + p + '-asuffix', p + '-asuffix');
+}
+function _fillAnimFromSpec(spec) {
+  document.getElementById('pose-char').value = spec.subject || '';
+  document.getElementById('pose-desc').value = spec.description || '';
+  _setCount('pose-count', spec.count);
+  const pose = (spec.character || {}).pose;
+  poseSel.clear();
+  if (pose) {
+    poseSel.add(pose);
+    const chip = document.querySelector(`.pose-chip[data-pose="${pose}"]`);
+    if (chip) { chip.classList.add('on'); chip.style.outline = '1px solid var(--acc)'; chip.style.color = 'var(--acc)'; }
+    const box = document.getElementById('pose-desc-box');
+    const pd = (POSE_DICT || {})[pose];
+    if (pd && box) { box.textContent = `${pd.label}：${pd.desc || ''}`; box.classList.add('show'); }
+  }
+}
+function _fillVfxFromSpec(spec) {
+  document.getElementById('vfx-name').value = spec.asset_name || spec.subject || '';
+  document.getElementById('vfx-asuffix').value = spec.asset_suffix_key || 'fx';
+  const el = spec.vfx ? spec.vfx.element : '';
+  const fm = spec.vfx ? spec.vfx.form : '';
+  if (el && document.getElementById('vfx-element').querySelector(`option[value="${el}"]`))
+    document.getElementById('vfx-element').value = el;
+  if (fm && document.getElementById('vfx-form').querySelector(`option[value="${fm}"]`))
+    document.getElementById('vfx-form').value = fm;
+  if (spec.size) document.getElementById('vfx-size').value = spec.size;
+  _setCount('vfx-count', spec.count);
+  showVfxElementDesc(); showVfxFormDesc(); previewVfxName();
 }
 
 // ---- 生图模型 API（默认/自定义：自定义存 localStorage，spec 携带 override，worker 剥离不落库）----
@@ -1936,12 +2046,27 @@ async function loadPoseDict() {
       padding:4px 12px;cursor:pointer;font-size:13px;display:inline-block;margin:3px">
       ${p.label}<span style="color:var(--dim);font-size:10px;margin-left:4px">${id}</span>
     </span>`).join('');
+  // 数量下拉：与其他页同款 1/2/4/6/8，默认 1
+  const cnt = document.getElementById('pose-count');
+  cnt.innerHTML = '';
+  for (const n of [1, 2, 4, 6, 8]) cnt.insertAdjacentHTML('beforeend', `<option ${n===1?'selected':''}>${n}</option>`);
+  // 恢复选中（切页重建后 UI 高亮按 poseSel 恢复）
+  el.querySelectorAll('.pose-chip').forEach(c => {
+    if (poseSel.has(c.dataset.pose)) { c.classList.add('on'); c.style.outline = '1px solid var(--acc)'; c.style.color = 'var(--acc)'; }
+  });
 }
 function togglePose(el) {
   const id = el.dataset.pose;
-  if (poseSel.has(id)) { poseSel.delete(id); el.classList.remove('on'); }
-  else { poseSel.add(id); el.classList.add('on'); el.style.outline = '1px solid var(--acc)'; el.style.color = 'var(--acc)'; }
-  if (!poseSel.has(id)) { el.style.outline = ''; el.style.color = ''; }
+  // 单选：先清全部，再选当前（再次点击同一个是取消）
+  if (poseSel.has(id)) {
+    poseSel.clear();
+    el.classList.remove('on'); el.style.outline = ''; el.style.color = '';
+  } else {
+    poseSel.clear();
+    el.parentElement.querySelectorAll('.pose-chip').forEach(c => { c.classList.remove('on'); c.style.outline = ''; c.style.color = ''; });
+    poseSel.add(id);
+    el.classList.add('on'); el.style.outline = '1px solid var(--acc)'; el.style.color = 'var(--acc)';
+  }
   // desc
   const box = document.getElementById('pose-desc-box');
   if (poseSel.size === 1) {
@@ -1953,44 +2078,73 @@ function togglePose(el) {
     box.classList.remove('show');
   }
 }
-async function submitPoses() {
+async function submitAnimJob() {
   const char = document.getElementById('pose-char').value.trim();
-  if (!char) { toast('角色名必填', 'bad'); return; }
-  if (!poseSel.size) { toast('至少选一个动作', 'bad'); return; }
-  const body = {
-    poses: [...poseSel],
-    count_each: parseInt(document.getElementById('pose-count').value),
-    description: document.getElementById('pose-desc').value.trim(),
-    style_refs: selectedRefs('anim'),   // 风格锚与角色锚在管线层合并
-  };
-  const ov = providerOverride();
-  if (ov && ov.api_key) body.provider_override = ov;
-  const r = await fetch(`api/characters/${encodeURIComponent(char)}/pose-batch`, {
-    method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
-    body: JSON.stringify(body),
-  });
-  const d = await r.json();
-  if (r.status !== 200) {
-    toast('提交失败：' + (d.detail || JSON.stringify(d)), 'bad');
-    return;
+  if (!char) { toast('角色/怪物名必填', 'bad'); return; }
+  if (!poseSel.size) { toast('请选择一个动作', 'bad'); return; }
+  const btn = document.getElementById('submit-anim-btn');
+  btn.textContent = '编译中…';
+  btn.disabled = true;
+  try {
+    const body = {
+      poses: [...poseSel],
+      count_each: parseInt(document.getElementById('pose-count').value),
+      description: document.getElementById('pose-desc').value.trim(),
+      style_refs: selectedRefs('anim'),   // 风格锚与角色锚在管线层合并
+    };
+    const ov = providerOverride();
+    if (ov && ov.api_key) body.provider_override = ov;
+    // 单动作 → 拿编译 spec → 走通用编译审核卡（与其他页一致）
+    const r = await fetch(`api/characters/${encodeURIComponent(char)}/pose-preview`, {
+      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+      body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.status !== 200) {
+      toast('提交失败：' + (d.detail || JSON.stringify(d)), 'bad');
+      return;
+    }
+    pendingSpec = d.spec;
+    // 编译预览（与其他页同款：中英对照 + lint + 精修底稿）
+    const r2 = await fetch('api/compile-preview', {
+      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+      body: JSON.stringify(d.spec)});
+    const d2 = await r2.json();
+    if (r2.status !== 200) {
+      toast('spec 校验未通过：' + (d2.detail?.message || JSON.stringify(d2.detail || d2)), 'bad');
+      return;
+    }
+    pendingSpec.compiled_prompt = d2.prompt;
+    pendingSpec.compiled_segments = d2.segments;
+    pendingSpec.compiled_prompt_zh = d2.prompt_zh || '';
+    renderReviewCard(d2);
+  } catch (e) {
+    toast('编译预览失败：' + e, 'bad');
+  } finally {
+    btn.textContent = '提交动作生成任务';
+    btn.disabled = false;
   }
-  toast(`已入队：${char} × ${body.poses.join(',')}（每动作${body.count_each}张）`, 'ok');
-  show('jobs');
 }
 
 // ---- 特效页（固定模板：元素系 × 特效形态 → 无背景 sprite） ----
 async function loadVfxDict() {
   if (!DICT) DICT = await fetchDict();
-  // 元素系 / 形态 / 后缀 / 尺寸 / 数量
+  // 元素系 / 形态 / 后缀 / 尺寸 / 数量（填充前清空——fill 是追加模式，防切页翻倍）
   DICT_STORE['vfx-asuffix'] = DICT.asset_suffixes || {};
+  const vs = document.getElementById('vfx-asuffix');
+  vs.innerHTML = '';
   fill('vfx-asuffix', DICT_STORE['vfx-asuffix'], 'label');
-  document.getElementById('vfx-asuffix').value = 'fx';
+  vs.value = 'fx';
   const els = DICT.vfx_elements || {};
+  const vel = document.getElementById('vfx-element');
+  vel.innerHTML = '';
   fill('vfx-element', els, 'label');
-  document.getElementById('vfx-element').value = 'fire';
+  vel.value = 'fire';
   const fms = DICT.vfx_forms || {};
+  const vf = document.getElementById('vfx-form');
+  vf.innerHTML = '';
   fill('vfx-form', fms, 'label');
-  document.getElementById('vfx-form').value = 'explosion';
+  vf.value = 'explosion';
   const sz = document.getElementById('vfx-size');
   sz.innerHTML = '';
   for (const [k, v] of Object.entries(DICT.sizes || {}))
@@ -2024,28 +2178,50 @@ function previewVfxName() {
 async function submitVfxJob() {
   const name = document.getElementById('vfx-name').value.trim();
   if (!name) { toast('特效名必填', 'bad'); return; }
-  const body = {
-    asset_name: name,
-    asset_suffix_key: document.getElementById('vfx-asuffix').value || 'fx',
-    vfx_element: document.getElementById('vfx-element').value,
-    vfx_form: document.getElementById('vfx-form').value,
-    size: document.getElementById('vfx-size').value,
-    count: parseInt(document.getElementById('vfx-count').value),
-    style_refs: selectedRefs('vfx'),
-  };
-  const ov = providerOverride();
-  if (ov && ov.api_key) body.provider_override = ov;
-  const r = await fetch('api/vfx', {
-    method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
-    body: JSON.stringify(body),
-  });
-  const d = await r.json().catch(() => ({}));
-  if (r.status !== 200) {
-    toast('提交失败：' + (d.detail || JSON.stringify(d)), 'bad');
-    return;
+  const btn = document.getElementById('submit-vfx-btn');
+  btn.textContent = '编译中…';
+  btn.disabled = true;
+  try {
+    const body = {
+      asset_name: name,
+      asset_suffix_key: document.getElementById('vfx-asuffix').value || 'fx',
+      vfx_element: document.getElementById('vfx-element').value,
+      vfx_form: document.getElementById('vfx-form').value,
+      size: document.getElementById('vfx-size').value,
+      count: parseInt(document.getElementById('vfx-count').value),
+      style_refs: selectedRefs('vfx'),
+    };
+    const ov = providerOverride();
+    if (ov && ov.api_key) body.provider_override = ov;
+    // 与其他页一致：先拿 spec → 编译预览 → 审核卡（中英对照+lint+精修）→ 确认入队
+    const r = await fetch('api/vfx/preview', {
+      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+      body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.status !== 200) {
+      toast('提交失败：' + (d.detail || JSON.stringify(d)), 'bad');
+      return;
+    }
+    const r2 = await fetch('api/compile-preview', {
+      method: 'POST', headers: {'Content-Type': 'application/json', ...H()},
+      body: JSON.stringify(d.spec)});
+    const d2 = await r2.json();
+    if (r2.status !== 200) {
+      toast('spec 校验未通过：' + (d2.detail?.message || JSON.stringify(d2.detail || d2)), 'bad');
+      return;
+    }
+    pendingSpec = d.spec;
+    pendingSpec.compiled_prompt = d2.prompt;
+    pendingSpec.compiled_segments = d2.segments;
+    pendingSpec.compiled_prompt_zh = d2.prompt_zh || '';
+    renderReviewCard(d2);
+  } catch (e) {
+    toast('编译预览失败：' + e, 'bad');
+  } finally {
+    btn.textContent = '提交特效生成任务';
+    btn.disabled = false;
   }
-  toast(`已入队：${name}（${(DICT.vfx_elements||{})[body.vfx_element].label}·${(DICT.vfx_forms||{})[body.vfx_form].label}）`, 'ok');
-  show('jobs');
 }
 
 // ---- 任务 ----

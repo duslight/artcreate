@@ -39,6 +39,20 @@ def list_runs(subject: str = None):
         sql += " WHERE subject=?"
         args.append(subject)
     sql += " ORDER BY created_at DESC LIMIT 100"
+    # run spec → 产出页面推断（历史列表徽标：避免误触其他模块的 run）
+    def _page_of(spec: dict) -> str:
+        at = str(spec.get("asset_type") or "")
+        if spec.get("vfx") or at.startswith("vfx_"):
+            return "vfx"
+        if (spec.get("character") or {}).get("pose"):
+            return "anim"
+        if at.startswith("monster_"):
+            return "monster"
+        if at.startswith("character_"):
+            return "pose"
+        return "new"
+    _labels = {"new": "场景", "pose": "角色", "monster": "怪物",
+               "anim": "角色动作", "vfx": "特效"}
     out = []
     for r in db().execute(sql, args).fetchall():
         item = dict(r)
@@ -48,8 +62,12 @@ def list_runs(subject: str = None):
             ch = spec.get("character") or {}
             if ch.get("pose"):
                 item["pose"] = ch["pose"]
+            item["page"] = _page_of(spec)
+            item["page_label"] = _labels.get(item["page"], "场景")
         except Exception:
             item.pop("spec", None)
+            item["page"] = "new"
+            item["page_label"] = "场景"
         out.append(item)
     return out
 
