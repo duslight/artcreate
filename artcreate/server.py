@@ -40,6 +40,8 @@ def list_runs(subject: str = None):
         args.append(subject)
     sql += " ORDER BY created_at DESC LIMIT 100"
     # run spec → 产出页面推断（历史列表徽标：避免误触其他模块的 run）
+    # 单点化锚点：前端 workbench.html pageOfSpec() 与此规则同步修改
+    # （前端优先采信此处返回的 page 字段，推断仅 fallback）
     def _page_of(spec: dict) -> str:
         at = str(spec.get("asset_type") or "")
         if spec.get("vfx") or at.startswith("vfx_"):

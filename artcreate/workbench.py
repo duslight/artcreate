@@ -405,6 +405,85 @@ def api_list_style_anchors(request: Request, scope: str = "scene",
             "max": STYLE_ANCHOR_MAX}
 
 
+# ---------- 抠背景图（独立工具页：同步处理，不入 runs/jobs，评审/历史不可见） ----------
+BG_REMOVE_ROOT = "_bg_remove"
+BG_REMOVE_TTL_HOURS = 24   # 结果文件保留期（不入库无引用，超时清目录防磁盘累积）
+
+
+def _cleanup_bg_remove():
+    """清超过保留期的 _bg_remove/<ts>/ 目录。"""
+    import shutil
+    root = cfg.root / "exports" / BG_REMOVE_ROOT
+    if not root.exists():
+        return
+    from datetime import datetime, timedelta
+    cutoff = datetime.now() - timedelta(hours=BG_REMOVE_TTL_HOURS)
+    for d in root.iterdir():
+        try:
+            ts = datetime.strptime(d.name, "%Y%m%d-%H%M%S-%f")
+            if ts < cutoff:
+                shutil.rmtree(d, ignore_errors=True)
+        except ValueError:
+            continue   # 非时间戳目录名不动
+
+
+@router.post("/api/bg-remove")
+async def api_bg_remove(request: Request, x_token: str = Header(None)):
+    """抠背景图：multipart files（png/jpg/webp，可多张）。同步逐张处理：
+    读原图 → remove_solid_bg（四角洪水填充判纯色底）→ 输出透明 PNG。
+    不写 runs/jobs 表（评审视图/历史任务不可见），结果只保留 24h。
+    四角色差过大（非纯色底）的图原样返回并标记 skipped。"""
+    _check_token(request, x_token)
+    import cv2
+    from datetime import datetime
+    from .tools.postprocess import imread_unicode, imwrite_unicode, remove_solid_bg
+    form = await request.form()
+    uploads = form.getlist("files")
+    if not uploads:
+        raise HTTPException(422, "files 必填（至少一张 png/jpg/webp）")
+    if len(uploads) > 20:
+        raise HTTPException(422, "单次最多 20 张")
+    _cleanup_bg_remove()   # 顺手清过期结果
+    batch = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    out_dir = cfg.root / "exports" / BG_REMOVE_ROOT / batch
+    out_dir.mkdir(parents=True, exist_ok=True)
+    results = []
+    for i, up in enumerate(uploads, 1):
+        name = Path(up.filename or f"img_{i}").stem
+        suffix = Path(up.filename or "").suffix.lower()
+        if suffix not in (".png", ".jpg", ".jpeg", ".webp"):
+            results.append({"source": up.filename, "error": f"不支持的格式：{suffix}"})
+            continue
+        src = out_dir / f"in_{i}{suffix}"
+        src.write_bytes(await up.read())
+        img = imread_unicode(src)
+        if img is None:
+            results.append({"source": up.filename, "error": "无法读取图像"})
+            continue
+        if img.shape[2] == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+        out = remove_solid_bg(img)
+        h, w = out.shape[:2]
+        alpha = out[:, :, 3]
+        transparent = float((alpha == 0).sum()) / (h * w)
+        if transparent < 0.01:   # 四角不均匀/主体触边 → 放弃自动抠
+            results.append({"source": up.filename, "skipped": True,
+                            "reason": "非纯色底（四角色差大）或主体触边，未自动抠图"})
+            continue
+        dst = out_dir / f"out_{i}_{name}.png"
+        imwrite_unicode(dst, out)
+        # 原图 in_N 保留在批目录（不单独删——安全删除策略下 unlink 不可靠，
+        # 且 24h 过期整目录清理时一起消失）
+        results.append({
+            "source": up.filename,
+            "file": dst.name,
+            "path": dst.relative_to(cfg.root).as_posix(),
+            "w": w, "h": h,
+            "transparent_pct": round(transparent * 100, 1),
+        })
+    return {"batch": batch, "results": results}
+
+
 @router.post("/api/style-anchors/upload")
 async def api_upload_style_anchor(request: Request,
                                   x_token: str = Header(None),

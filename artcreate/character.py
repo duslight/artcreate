@@ -275,7 +275,8 @@ def pose_batch_spec(character: str, poses: list, description: str = "",
         spec = {
             "subject": character,
             "description": description or f"{character} 动作变体",
-            "asset_type": "card_art",
+            # pose_sprite：magenta 纯色底 prefix + 后处理自动抠透明（SPRITE_TYPES）
+            "asset_type": "pose_sprite",
             "count": count_each,
             "constraints": cons,
             "ref_images": refs,

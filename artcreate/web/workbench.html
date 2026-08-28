@@ -144,6 +144,7 @@
     <button id="nav-monster" onclick="show('monster')">怪物生成</button>
     <button id="nav-anim" onclick="show('anim')">角色动作</button>
     <button id="nav-vfx" onclick="show('vfx')">特效</button>
+    <button id="nav-cutout" onclick="show('cutout')">抠背景图</button>
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
     <span style="color:var(--dim);font-size:11px;min-width:60px">审校管理</span>
@@ -396,6 +397,17 @@
   </div>
 </div>
 
+<!-- 抠背景图（独立工具页：上传→同步抠图→下载。不进评审视图/历史任务/任务队列） -->
+<div id="page-cutout" class="panel" style="display:none">
+  <div style="font-size:12px;color:var(--dim);margin-bottom:12px">上传图片批量抠纯色背景：四角取色判定背景，容差内转透明输出 PNG。非纯色底（如照片）会跳过并提示。结果保留 24 小时，仅此页可见。</div>
+  <div><label>选择图片（可多选，png/jpg/webp，单次最多 20 张）</label>
+    <input type="file" id="cutout-files" accept=".png,.jpg,.jpeg,.webp" multiple
+           onchange="cutoutFilePicked()" style="font-size:13px"></div>
+  <div id="cutout-picked" style="font-size:12px;color:var(--dim);margin:6px 0"></div>
+  <button class="go" id="cutout-btn" onclick="submitCutout()">提交抠图任务</button>
+  <div id="cutout-results" style="margin-top:14px"></div>
+</div>
+
 <div id="page-jobs" class="panel" style="display:none">
   <div id="jobs-list">加载中…</div>
 </div>
@@ -548,10 +560,10 @@ function tok() { const t = localStorage.getItem('ac-token'); return t ? {'X-Toke
 function H() { return { ...actorHeaders(), ...tok() }; }
 
 // ---- 页面切换 ----
-function currentPage() {
-  const on = document.querySelector('#nav-new,#nav-pose,#nav-monster,#nav-anim,#nav-vfx,#nav-jobs,#nav-feed,#nav-prop,#nav-review');
-  return on ? on.classList.contains('on') ? on.id.replace('nav-', '') : 'new' : 'new';
-}
+// 显式跟踪当前页（querySelector 方案按文档序恒返回首个 nav，导致审核卡/
+// live-zone 的 ownerPage 全记成场景页、切页泄漏显示——根治）
+let curPage = 'new';
+function currentPage() { return curPage; }
 // 评审 iframe 高度自适应：占满剩余视口，评审区内部滚动、外层不再滚动（与页面其余部分隔开）
 function fitReviewFrame() {
   const f = document.getElementById('review-frame');
@@ -562,7 +574,8 @@ function fitReviewFrame() {
 }
 window.addEventListener('resize', fitReviewFrame);
 function show(p) {
-  for (const x of ['new', 'pose', 'monster', 'anim', 'vfx', 'jobs', 'feed', 'prop', 'review']) {
+  curPage = p;
+  for (const x of ['new', 'pose', 'monster', 'anim', 'vfx', 'cutout', 'jobs', 'feed', 'prop', 'review']) {
     const pg = document.getElementById('page-' + x);
     if (pg) pg.style.display = x === p ? '' : 'none';
     document.getElementById('nav-' + x).classList.toggle('on', x === p);
@@ -1334,14 +1347,18 @@ function zoomLive(src) { window.open(src, '_blank'); }
 let HIST_RUNS = null;
 let HIST_PAGE = 'new';   // 面板从哪个页打开（载入后跳回该页表单）
 // run spec → 产出页面推断（历史列表徽标 + 载入路由）
-function pageOfSpec(spec) {
+// 单点化：列表场景优先用后端 /api/runs 返回的 page 字段（server._page_of），
+// 此处推断仅作 fallback（历史 spec 直接手拿时）。改规则两处同步：
+// 前端 pageOfSpec ↔ 后端 server._page_of
+function pageOfSpec(spec, backendPage) {
+  if (backendPage && backendPage !== 'new') return backendPage;   // 后端已判明非场景 → 信任
   const at = spec.asset_type || '';
   if (spec.vfx) return 'vfx';
   if (at.startsWith('vfx_')) return 'vfx';
   if (spec.character && spec.character.pose) return 'anim';
   if (at.startsWith('monster_')) return 'monster';
   if (at.startsWith('character_')) return 'pose';
-  return 'new';
+  return backendPage || 'new';   // 后端说 new 或未提供 → 按本地推断
 }
 const PAGE_LABELS = { new: '场景', pose: '角色', monster: '怪物', anim: '角色动作', vfx: '特效' };
 function toggleHistoryPanel(page) {
@@ -1377,7 +1394,8 @@ async function fillFromRun(runId, meta) {
   const full = await (await fetch(`api/spec/${runId}`, {headers: H()})).json();
   const spec = full.spec || {};
   // 路由：按 spec 推断产出页面，跳过去再回填对应表单（避免角色 run 错填场景表单）
-  const page = pageOfSpec(spec);
+  // meta.page 来自历史列表（后端 _page_of 已判明），优先采信
+  const page = pageOfSpec(spec, meta && meta.page);
   if (page !== currentPage()) show(page);
   // 目标页字典先就位（show 触发的 loadXxxDict 是异步，回填下拉依赖选项已在）
   if (page === 'pose' && !DICT) DICT = await fetchDict();
@@ -2222,6 +2240,65 @@ async function submitVfxJob() {
     btn.textContent = '提交特效生成任务';
     btn.disabled = false;
   }
+}
+
+// ---- 抠背景图（独立工具页：同步端点，不入 jobs/runs） ----
+function cutoutFilePicked() {
+  const n = document.getElementById('cutout-files').files.length;
+  document.getElementById('cutout-picked').textContent =
+    n ? `已选 ${n} 张，点「提交抠图任务」开始` : '';
+}
+async function submitCutout() {
+  const files = document.getElementById('cutout-files').files;
+  if (!files.length) { toast('先选择至少一张图片', 'bad'); return; }
+  const btn = document.getElementById('cutout-btn');
+  btn.textContent = '抠图中…';
+  btn.disabled = true;
+  document.getElementById('cutout-results').innerHTML =
+    '<div class="meta">处理中（每张约 1-2 秒）…</div>';
+  try {
+    const fd = new FormData();
+    for (const f of files) fd.append('files', f);
+    const r = await fetch('api/bg-remove', { method: 'POST', headers: H(), body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (r.status !== 200) {
+      toast('抠图失败：' + (d.detail || JSON.stringify(d)), 'bad');
+      document.getElementById('cutout-results').innerHTML = '';
+      return;
+    }
+    renderCutoutResults(d);
+  } catch (e) {
+    toast('抠图失败：' + e, 'bad');
+    document.getElementById('cutout-results').innerHTML = '';
+  } finally {
+    btn.textContent = '提交抠图任务';
+    btn.disabled = false;
+    document.getElementById('cutout-files').value = '';
+    document.getElementById('cutout-picked').textContent = '';
+  }
+}
+function renderCutoutResults(d) {
+  const box = document.getElementById('cutout-results');
+  const ok = d.results.filter(x => x.file);
+  const skipped = d.results.filter(x => x.skipped || x.error);
+  box.innerHTML =
+    (ok.length ? `<div style="font-size:12px;color:var(--ok);margin-bottom:8px">已抠 ${ok.length} 张（透明占比标注在图下，仅「下载」可用）</div>
+      <div class="lgrid">${ok.map(x => {
+        const url = `api/images/_bg_remove/${d.batch}/${encodeURIComponent(x.file)}`;
+        const dlName = x.file.replace(/^out_\d+_/, '');
+        return `
+        <div class="lcard">
+          <div style="position:relative;background:repeating-conic-gradient(#2a2d31 0 25%,#22252a 0 50%) 50%/16px 16px">
+            <img src="${url}" loading="lazy" onclick="zoomLive(this.src)" style="width:100%;display:block">
+          </div>
+          <div class="lbar">
+            <span>${x.source}</span>
+            <span style="color:var(--dim);font-size:11px">${x.transparent_pct}% 透明</span>
+            <span style="flex:1"></span>
+            <button onclick="downloadImg('${url}', '${dlName}')">下载</button>
+          </div>
+        </div>`;}).join('')}</div>` : '') +
+    (skipped.length ? `<div style="font-size:12px;color:var(--warn);margin-top:8px">跳过 ${skipped.length} 张：${skipped.map(x => `${x.source}（${x.reason || x.error}）`).join('、')}</div>` : '');
 }
 
 // ---- 任务 ----
