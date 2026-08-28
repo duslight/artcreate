@@ -155,7 +155,7 @@
 
 <div id="page-new" class="panel" style="display:none">
   <div class="row">
-    <div><label>资产名（库内组织 + 拍板发布，一名两用）</label><input type="text" id="f-aname" placeholder="例：shrine_forest" oninput="previewName()"></div>
+    <div><label>资产名</label><input type="text" id="f-aname" placeholder="例：shrine_forest" oninput="previewName()"></div>
     <div style="max-width:180px"><label>后缀</label><select id="f-asuffix" onchange="previewName()"></select><div class="desc" id="desc-f-asuffix"></div></div>
   </div>
   <div style="font-size:12px;color:var(--ok);margin:4px 0 8px;min-height:1em" id="aname-preview"></div>
@@ -218,7 +218,7 @@
 
   <!-- 立绘生成（角色冷启动：产出首张立绘 → 拍板 → 「设为锚点」建立形象基准） -->
   <div class="row">
-    <div><label>角色名（库内组织 + 拍板发布，一名两用）</label><input type="text" id="c-name" placeholder="例：alice"></div>
+    <div><label>角色名</label><input type="text" id="c-name" placeholder="例：alice"></div>
   </div>
   <div class="row">
     <div><label>角色描述（中文一句话：外貌/服装/气质）</label><input type="text" id="c-desc" placeholder="例：红发精灵弓箭手，皮质轻甲，斗篷"></div>
@@ -271,7 +271,7 @@
 <!-- 怪物生成（独立于角色页：非人形生物设计。轴依据：剪影优先/单一主形/一只怪物一个动词） -->
 <div id="page-monster" class="panel" style="display:none">
   <div class="row">
-    <div><label>怪物名（库内组织 + 拍板发布，一名两用）</label><input type="text" id="m-name" placeholder="例：ember_toad"></div>
+    <div><label>怪物名</label><input type="text" id="m-name" placeholder="例：ember_toad"></div>
   </div>
   <div class="row">
     <div><label>怪物描述（中文一句话：物种意象/环境/行为）</label><input type="text" id="m-desc" placeholder="例：沼泽里的巨型火蟾蜍，背脊喷吐余烬"></div>
@@ -383,7 +383,8 @@
 </div>
 
 <div id="page-review" class="panel" style="display:none;padding:0;overflow:hidden">
-  <!-- 页内嵌入评审视图：postMessage 联动（ac-select-run 进 / ac-iterate 回），不再整页跳转 -->
+  <!-- 页内嵌入评审视图：postMessage 联动（ac-select-run 进 / ac-iterate 回），不再整页跳转。
+       高度自适应占满剩余视口（fitReviewFrame），外层不再出现第二重滚动，评审区与页面其余部分隔开 -->
   <iframe id="review-frame" src="index.html" style="width:100%;height:78vh;border:none;display:block"></iframe>
 </div>
 
@@ -511,6 +512,15 @@ function currentPage() {
   const on = document.querySelector('#nav-new,#nav-pose,#nav-monster,#nav-anim,#nav-jobs,#nav-feed,#nav-prop,#nav-review');
   return on ? on.classList.contains('on') ? on.id.replace('nav-', '') : 'new' : 'new';
 }
+// 评审 iframe 高度自适应：占满剩余视口，评审区内部滚动、外层不再滚动（与页面其余部分隔开）
+function fitReviewFrame() {
+  const f = document.getElementById('review-frame');
+  if (!f) return;
+  const rect = f.getBoundingClientRect();
+  const h = Math.max(320, window.innerHeight - rect.top - 12);   // 留底部呼吸空隙
+  f.style.height = h + 'px';
+}
+window.addEventListener('resize', fitReviewFrame);
 function show(p) {
   for (const x of ['new', 'pose', 'monster', 'anim', 'jobs', 'feed', 'prop', 'review']) {
     const pg = document.getElementById('page-' + x);
@@ -530,6 +540,7 @@ function show(p) {
   if (p === 'pose') loadCharDict();
   if (p === 'monster') loadMonDict();
   if (p === 'anim') { loadPoseDict(); loadStyleAnchors(); }
+  if (p === 'review') fitReviewFrame();   // 切入评审页时按当前视口自适应高度
 }
 
 // ---- 提案（D22 蒸馏晋升） ----
@@ -593,8 +604,26 @@ function showDesc(sel) {
   if (info.desc) { box.textContent = info.desc; box.classList.add('show'); }
   else { box.classList.remove('show'); }
 }
+// 拉取表单字典：401 时现场引导补令牌并重试；仍失败则显式报错（避免下拉静默空白不可交互）
+async function fetchDict() {
+  let r = await fetch('api/form/dict', {headers: H()});
+  if (r.status === 401) {
+    const t = await acPrompt({title: '需要访问令牌', message: '本服务已启用令牌校验，请输入访问令牌（自动记住，之后不再询问）', placeholder: '访问令牌', value: localStorage.getItem('ac-token') || ''});
+    if (t !== null && t.trim()) {
+      localStorage.setItem('ac-token', t.trim());
+      r = await fetch('api/form/dict', {headers: H()});
+    }
+  }
+  if (!r.ok) throw new Error('form/dict ' + r.status);
+  return await r.json();
+}
 async function loadDict() {
-  DICT = await (await fetch('api/form/dict', {headers: H()})).json();
+  try {
+    DICT = await fetchDict();
+  } catch (e) {
+    toast('表单字典加载失败（令牌无效或服务不可达），下拉选项为空；请检查后刷新页面', 'bad');
+    return;
+  }
   DICT_STORE['f-atype'] = DICT.asset_types;
   const sceneStyles = stylesFor('scene');
   DICT_STORE['f-style'] = sceneStyles;
@@ -681,7 +710,7 @@ function clearParent() {
 }
 function collectSpec() {
   const aname = document.getElementById('f-aname').value.trim();
-  if (!aname) { toast('资产名必填（库内组织 + 拍板发布一名两用）', 'bad'); return null; }
+  if (!aname) { toast('资产名必填', 'bad'); return null; }
   const spec = {
     subject: aname,
     asset_name: aname,
@@ -1148,9 +1177,9 @@ async function liveAct(kind, idx, btn) {
   if (card) card.querySelectorAll('.lbar button').forEach(b => b.disabled = true);
   try {
     if (kind === 'reject') {
-      const code = await acPrompt({title: '拒绝候选 #' + idx, message: '拒绝码：style_drift / composition / constraint_violation / other', value: 'manual'});
+      const code = await acPrompt({title: '拒绝候选 #' + idx, message: '请备注拒绝原因', placeholder: '例：画风漂移 / 构图问题 / 违反约束', value: ''});
       if (code === null) { if (card) card.querySelectorAll('.lbar button').forEach(b => b.disabled = false); return; }
-      await fetch(`api/runs/${runId}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
+      await fetch(`api/runs/${runId}/candidates/${idx}/reject?code=${encodeURIComponent(code.trim() || '未备注')}`, {method:'POST', headers:H()});
       toast(`#${idx} 已拒绝`, 'info');
     } else {
       const r = await fetch(`api/runs/${runId}/candidates/${idx}/accept`, {method:'POST', headers:H()});
@@ -1537,7 +1566,7 @@ function stylesFor(mode) {
     !v.applies_to || v.applies_to.includes(mode)));
 }
 async function loadCharDict() {
-  if (!DICT) DICT = await (await fetch('api/form/dict', {headers: H()})).json();
+  if (!DICT) DICT = await fetchDict();
   // atype 下拉只留角色两类（character_full/character_sheet）
   const charTypes = Object.fromEntries(Object.entries(DICT.asset_types || {})
     .filter(([k]) => k.startsWith('character_')));
@@ -1599,7 +1628,7 @@ function pickCharAxis(el) {
 }
 function collectCharSpec() {
   const name = document.getElementById('c-name').value.trim();
-  if (!name) { toast('角色名必填（= 库内组织名 = 拍板发布名）', 'bad'); return null; }
+  if (!name) { toast('角色名必填', 'bad'); return null; }
   const desc = document.getElementById('c-desc').value.trim();
   if (!desc) { toast('角色描述必填（外貌/服装/气质一句话）', 'bad'); return null; }
   const spec = {
@@ -1690,7 +1719,7 @@ let POSE_DICT = null;
 // ---- 怪物模式（立绘生成：复用编译审核链路，独立三槽库 + 怪物专用轴） ----
 let monAxisSel = {};
 async function loadMonDict() {
-  if (!DICT) DICT = await (await fetch('api/form/dict', {headers: H()})).json();
+  if (!DICT) DICT = await fetchDict();
   // atype 下拉只留怪物类（monster_*，按 applies_to 过滤更稳）
   const monTypes = Object.fromEntries(Object.entries(DICT.asset_types || {})
     .filter(([k, v]) => (v.applies_to || []).includes('monster')));
@@ -1753,7 +1782,7 @@ function pickMonAxis(el) {
 }
 function collectMonSpec() {
   const name = document.getElementById('m-name').value.trim();
-  if (!name) { toast('怪物名必填（= 库内组织名 = 拍板发布名）', 'bad'); return null; }
+  if (!name) { toast('怪物名必填', 'bad'); return null; }
   const desc = document.getElementById('m-desc').value.trim();
   if (!desc) { toast('怪物描述必填（物种意象/环境/行为一句话）', 'bad'); return null; }
   const spec = {
@@ -1814,7 +1843,7 @@ async function submitMonJob() {
   }
 }
 async function loadPoseDict() {
-  if (!DICT) DICT = await (await fetch('api/form/dict', {headers: H()})).json();
+  if (!DICT) DICT = await fetchDict();
   POSE_DICT = DICT.character_poses || {};
   const el = document.getElementById('pose-list');
   el.innerHTML = Object.entries(POSE_DICT).map(([id, p]) => `

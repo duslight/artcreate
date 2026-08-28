@@ -72,7 +72,7 @@
 </head>
 <body>
 <h1>artcreate · 资产评审</h1>
-<div class="sub">候选网格 → 接受 / 拒绝（带码）→ 门禁与回查报告就地查看</div>
+<div class="sub">候选网格 → 接受 / 拒绝（备注原因）→ 门禁与回查报告就地查看</div>
 <div class="layout">
   <div class="panel runs" id="runs">加载中…</div>
   <div class="panel main" id="main"><div class="empty">左侧选择一次 run</div></div>
@@ -276,9 +276,9 @@ async function act(kind, idx, btn) {
   if (card) card.querySelectorAll('.bar button').forEach(b => b.disabled = true);
   try {
     if (kind === 'reject') {
-      const code = await acPrompt({title: '拒绝候选 #' + idx, message: '拒绝码：style_drift / composition / constraint_violation / other', value: 'manual'});
+      const code = await acPrompt({title: '拒绝候选 #' + idx, message: '请备注拒绝原因', placeholder: '例：画风漂移 / 构图问题 / 违反约束', value: ''});
       if (code === null) { if (card) card.querySelectorAll('.bar button').forEach(b => b.disabled = false); return; }
-      await fetch(`api/runs/${curRun}/candidates/${idx}/reject?code=${encodeURIComponent(code)}`, {method:'POST', headers:H()});
+      await fetch(`api/runs/${curRun}/candidates/${idx}/reject?code=${encodeURIComponent(code.trim() || '未备注')}`, {method:'POST', headers:H()});
       toast(`#${idx} 已拒绝`, 'info');
     } else {
       const r = await fetch(`api/runs/${curRun}/candidates/${idx}/accept`, {method:'POST', headers:H()});
