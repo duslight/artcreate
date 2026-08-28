@@ -481,12 +481,14 @@ character_poses:
             desc: "冲刺帧。极端前倾+后摆臂，跑图/突进技用（motion lines 若与画风冲突可在 project.yaml 去掉）" }
 
 # ---------- 资产后缀字典（命名条目：主名手输 + 后缀拉选，拍板发布 exports/final/） ----------
+# 词条依据实际游戏资产归类：迭代变体（v2/alt/hd）、用途版本（icon/portrait/sheet/fx）
 # id 即后缀本身（含下划线）；动作批量不走这里（自动命名 = 角色名_动作）
 asset_suffixes:
-  none:  { label: "无后缀", desc: "首个定稿，主名即文件名" }
-  v2:    { label: "_v2 版本迭代", suffix: "_v2", desc: "同资产换版（重画/大改）" }
-  v3:    { label: "_v3 版本迭代", suffix: "_v3", desc: "第三版" }
-  alt:   { label: "_alt 平行方案", suffix: "_alt", desc: "同版换方向（A/B 方案并存）" }
-  hd:    { label: "_hd 高清版", suffix: "_hd", desc: "高清放大版（如 2x）" }
-  icon:  { label: "_icon 图标", suffix: "_icon", desc: "缩略图标版（UI 头像/物品栏）" }
-  sheet: { label: "_sheet 三视图", suffix: "_sheet", desc: "角色三视图/设定表" }
+  none:     { label: "无后缀", desc: "首个定稿，主名即文件名" }
+  v2:       { label: "_v2 版本迭代", suffix: "_v2", desc: "同资产换版（重画/大改）" }
+  alt:      { label: "_alt 平行方案", suffix: "_alt", desc: "同版换方向（A/B 方案并存）" }
+  hd:       { label: "_hd 高清版", suffix: "_hd", desc: "高清放大版（如 2x）" }
+  icon:     { label: "_icon 图标", suffix: "_icon", desc: "缩略图标版（UI 头像/物品栏）" }
+  portrait: { label: "_portrait 头像", suffix: "_portrait", desc: "对话框半身像版（对话/Faceset 用）" }
+  sheet:    { label: "_sheet 前后视图", suffix: "_sheet", desc: "角色前后视图/设定表" }
+  fx:       { label: "_fx 特效", suffix: "_fx", desc: "技能/打击特效帧（VFX 用）" }

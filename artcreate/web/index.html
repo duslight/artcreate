@@ -77,7 +77,12 @@
   <div class="panel runs" id="runs">加载中…</div>
   <div class="panel main" id="main"><div class="empty">选择左侧记录</div></div>
 </div>
-<dialog id="zoom"><img id="zoomImg" onclick="this.parentElement.close()"></dialog>
+<dialog id="zoom">
+  <img id="zoomImg" onclick="this.parentElement.close()">
+  <div style="text-align:center;margin-top:8px">
+    <button onclick="downloadImg(document.getElementById('zoomImg').src, 'zoom_' + document.getElementById('zoomImg').src.split('/').pop())">下载此图</button>
+  </div>
+</dialog>
 <script src="dlg.js"></script>
 <script>
 let curRun = null;
@@ -173,6 +178,7 @@ function render(d) {
           <button class="no" onclick="act('reject',${c.idx},this)">拒绝</button>
           <button onclick="makeAnchor(${c.idx},this)">设为锚点</button>
           <button onclick="refineRun(this)">精修</button>` : ''}
+          <button onclick="downloadImg(this.closest('.card').querySelector('img').src, '${d.run.subject}_${d.run.run_id}_${c.file}')">下载</button>
       </div>
       ${(mech||l3) ? `<div class="checks">${mech}${l3}</div>` : ''}
     </div>`;
@@ -321,6 +327,24 @@ async function showLineage() {
 function zoom(src) {
   document.getElementById('zoomImg').src = src;
   document.getElementById('zoom').showModal();
+}
+
+// ---- 图片下载：fetch blob 触发浏览器另存（跨源直链 a[download] 会被降级为打开）----
+async function downloadImg(url, filename) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status);
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename || url.split('/').pop();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch (e) {
+    toast('下载失败：' + e, 'bad');
+  }
 }
 
 loadRuns().then(() => {

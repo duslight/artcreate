@@ -219,7 +219,9 @@
   <!-- 立绘生成（角色冷启动：产出首张立绘 → 拍板 → 「设为锚点」建立形象基准） -->
   <div class="row">
     <div><label>角色名</label><input type="text" id="c-name" placeholder="例：alice"></div>
+    <div style="max-width:180px"><label>后缀</label><select id="c-asuffix" onchange="previewCharName()"></select><div class="desc" id="desc-c-asuffix"></div></div>
   </div>
+  <div style="font-size:12px;color:var(--ok);margin:4px 0 8px;min-height:1em" id="cname-preview"></div>
   <div class="row">
     <div><label>角色描述（中文一句话：外貌/服装/气质）</label><input type="text" id="c-desc" placeholder="例：红发精灵弓箭手，皮质轻甲，斗篷"></div>
   </div>
@@ -272,7 +274,9 @@
 <div id="page-monster" class="panel" style="display:none">
   <div class="row">
     <div><label>怪物名</label><input type="text" id="m-name" placeholder="例：ember_toad"></div>
+    <div style="max-width:180px"><label>后缀</label><select id="m-asuffix" onchange="previewMonName()"></select><div class="desc" id="desc-m-asuffix"></div></div>
   </div>
+  <div style="font-size:12px;color:var(--ok);margin:4px 0 8px;min-height:1em" id="mname-preview"></div>
   <div class="row">
     <div><label>怪物描述（中文一句话：物种意象/环境/行为）</label><input type="text" id="m-desc" placeholder="例：沼泽里的巨型火蟾蜍，背脊喷吐余烬"></div>
   </div>
@@ -679,6 +683,38 @@ function previewName() {
   const sfx = skey && skey !== 'none' ? (suf.suffix || '') : '';
   box.textContent = `→ exports/final/${name}${sfx}.png`;
 }
+// ---- 资产命名预览（角色/怪物页：与场景页同款，后缀 + 发布名实时预览）----
+// ---- 图片下载：fetch blob 触发浏览器另存（跨源直链 a[download] 会被降级为打开）----
+async function downloadImg(url, filename) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status);
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename || url.split('/').pop();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch (e) {
+    toast('下载失败：' + e, 'bad');
+  }
+}
+function _previewNameGeneric(nameInput, suffixSel, previewBox, descBox, storeKey) {
+  const name = document.getElementById(nameInput).value.trim();
+  const skey = document.getElementById(suffixSel).value;
+  const box = document.getElementById(previewBox);
+  const dbox = document.getElementById(descBox);
+  const suf = (DICT_STORE[storeKey] || {})[skey] || {};
+  if (suf.desc) { dbox.textContent = suf.desc; dbox.classList.add('show'); }
+  else dbox.classList.remove('show');
+  if (!name) { box.textContent = ''; return; }
+  const sfx = skey && skey !== 'none' ? (suf.suffix || '') : '';
+  box.textContent = `→ exports/final/${name}${sfx}.png`;
+}
+function previewCharName() { _previewNameGeneric('c-name', 'c-asuffix', 'cname-preview', 'desc-c-asuffix', 'c-asuffix'); }
+function previewMonName()  { _previewNameGeneric('m-name', 'm-asuffix', 'mname-preview', 'desc-m-asuffix', 'm-asuffix'); }
 function pickAxis(el) {
   const axis = el.dataset.axis;
   document.querySelectorAll(`.opt[data-axis="${axis}"]`).forEach(x => x.classList.remove('on'));
@@ -1165,6 +1201,7 @@ async function loadLiveCandidates(runId) {
             <button class="no" onclick="liveAct('reject',${c.idx},this)">拒绝</button>
             <button onclick="liveMakeAnchor(${c.idx},'${runId}',this)">设为锚点</button>
             <button onclick="refineThisRun('${runId}',this)">精修</button>` : ''}
+            <button onclick="downloadImg(this.closest('.lcard').querySelector('img').src, '${d.run.subject}_${runId}_${c.file}')">下载</button>
         </div>
       </div>`).join('')}</div>`;
   grid.dataset.run = runId;
@@ -1567,6 +1604,12 @@ function stylesFor(mode) {
 }
 async function loadCharDict() {
   if (!DICT) DICT = await fetchDict();
+  // 后缀下拉（与场景页同款字典）
+  DICT_STORE['c-asuffix'] = DICT.asset_suffixes || {};
+  fill('c-asuffix', DICT_STORE['c-asuffix'], 'label');
+  document.getElementById('c-asuffix').value = 'none';
+  document.getElementById('c-name').addEventListener('input', previewCharName);
+  previewCharName();
   // atype 下拉只留角色两类（character_full/character_sheet）
   const charTypes = Object.fromEntries(Object.entries(DICT.asset_types || {})
     .filter(([k]) => k.startsWith('character_')));
@@ -1634,7 +1677,7 @@ function collectCharSpec() {
   const spec = {
     subject: name,
     asset_name: name,
-    asset_suffix_key: 'none',   // 首张立绘：主名即文件名；后缀迭代走场景表单或精修
+    asset_suffix_key: document.getElementById('c-asuffix').value || 'none',
     description: desc,
     asset_type: document.getElementById('c-atype').value,
     art_style: document.getElementById('c-style').value,
@@ -1720,6 +1763,12 @@ let POSE_DICT = null;
 let monAxisSel = {};
 async function loadMonDict() {
   if (!DICT) DICT = await fetchDict();
+  // 后缀下拉（与场景页同款字典）
+  DICT_STORE['m-asuffix'] = DICT.asset_suffixes || {};
+  fill('m-asuffix', DICT_STORE['m-asuffix'], 'label');
+  document.getElementById('m-asuffix').value = 'none';
+  document.getElementById('m-name').addEventListener('input', previewMonName);
+  previewMonName();
   // atype 下拉只留怪物类（monster_*，按 applies_to 过滤更稳）
   const monTypes = Object.fromEntries(Object.entries(DICT.asset_types || {})
     .filter(([k, v]) => (v.applies_to || []).includes('monster')));
@@ -1788,7 +1837,7 @@ function collectMonSpec() {
   const spec = {
     subject: name,
     asset_name: name,
-    asset_suffix_key: 'none',
+    asset_suffix_key: document.getElementById('m-asuffix').value || 'none',
     description: desc,
     asset_type: document.getElementById('m-atype').value,
     art_style: document.getElementById('m-style').value,
